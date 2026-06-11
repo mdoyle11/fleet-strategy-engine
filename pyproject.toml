@@ -1,0 +1,23 @@
+[project]
+name = "fleet-strategy-engine"
+version = "0.1.0"
+description = "Local-first fleet strategy recommendation engine"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas>=2.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+

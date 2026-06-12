@@ -17,6 +17,12 @@ ACTION_COLORS = {
     "HOLD": "#64748b",
     "REDUCE": "#dc2626",
 }
+PRICING_ACTION_ORDER = [
+    "RAISE_PRICE_TEST",
+    "HOLD_PRICE",
+    "PRICE_COMPETITIVENESS_REVIEW",
+    "MONITOR_PRICE",
+]
 
 
 st.set_page_config(
@@ -48,6 +54,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         stations = st.multiselect("Station", sorted(df["station"].unique()))
         segments = st.multiselect("Segment", sorted(df["segment"].unique()))
         recommendations = st.multiselect("Recommendation", ACTION_ORDER)
+        pricing_actions = st.multiselect("Pricing Action", PRICING_ACTION_ORDER)
         confidences = st.multiselect("Confidence", ["high", "medium", "low"])
 
     filtered = df.copy()
@@ -57,6 +64,8 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered["segment"].isin(segments)]
     if recommendations:
         filtered = filtered[filtered["recommendation"].isin(recommendations)]
+    if pricing_actions:
+        filtered = filtered[filtered["pricing_action"].isin(pricing_actions)]
     if confidences:
         filtered = filtered[filtered["confidence"].isin(confidences)]
     return filtered
@@ -81,6 +90,7 @@ def render_summary(summary: dict, filtered_df: pd.DataFrame) -> None:
 def render_charts(df: pd.DataFrame) -> None:
     left, right = st.columns(2)
 
+    # Recommendation Counts
     counts = recommendation_counts_frame(df)
     left.plotly_chart(
         px.bar(
@@ -95,35 +105,104 @@ def render_charts(df: pd.DataFrame) -> None:
         use_container_width=True,
     )
 
-    by_segment = (
-        df.groupby(["segment", "recommendation"])
-        .size()
+    # Pricing Action Counts
+    pricing_counts = (
+        df["pricing_action"]
+        .value_counts()
+        .reindex(PRICING_ACTION_ORDER, fill_value=0)
+        .rename_axis("pricing_action")
         .reset_index(name="count")
-        .sort_values(["segment", "recommendation"])
     )
     right.plotly_chart(
         px.bar(
-            by_segment,
-            x="segment",
+            pricing_counts,
+            x="pricing_action",
             y="count",
-            color="recommendation",
-            color_discrete_map=ACTION_COLORS,
-            category_orders={"recommendation": ACTION_ORDER},
-            barmode="group",
-            labels={"segment": "Segment", "count": "Rows", "recommendation": "Action"},
+            labels={"pricing_action": "Pricing Action", "count": "Rows"},
         ),
         use_container_width=True,
     )
 
     scatter_left, scatter_right = st.columns(2)
-    scatter_left.plotly_chart(
+
+    # Price Gap vs Utilization
+    price_util_fig = px.scatter(
+        df,
+        x="price_gap_pct",
+        y="utilization_pct",
+        color="recommendation",
+        symbol="pricing_action",
+        hover_data=[
+            "station",
+            "segment",
+            "daily_margin",
+            "market_share_pct",
+            "recommended_fleet_delta",
+            "pricing_action",
+            "reason_codes",
+            "pricing_reason_codes",
+        ],
+        color_discrete_map=ACTION_COLORS,
+        category_orders={"recommendation": ACTION_ORDER},
+        labels={
+            "price_gap_pct": "Price Gap vs Competitor %",
+            "utilization_pct": "Utilization %",
+            "recommendation": "Action",
+            "pricing_action": "Pricing Action",
+        },
+    )
+    price_util_fig.add_hline(y=75, line_dash="dash", line_color="#94a3b8")
+    price_util_fig.add_hline(y=90, line_dash="dash", line_color="#94a3b8")
+    price_util_fig.add_vline(x=-10, line_dash="dash", line_color="#94a3b8")
+    price_util_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
+    scatter_left.plotly_chart(price_util_fig, use_container_width=True)
+
+    # Utilization vs Market Share
+    util_share_fig = px.scatter(
+        df,
+        x="utilization_pct",
+        y="market_share_pct",
+        color="recommendation",
+        hover_data=[
+            "station",
+            "segment",
+            "daily_margin",
+            "price_gap_pct",
+            "recommended_fleet_delta",
+            "pricing_action",
+            "reason_codes",
+        ],
+        color_discrete_map=ACTION_COLORS,
+        category_orders={"recommendation": ACTION_ORDER},
+        labels={
+            "utilization_pct": "Utilization %",
+            "market_share_pct": "Market Share %",
+            "recommendation": "Action",
+        },
+    )
+    util_share_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
+    util_share_fig.add_vline(x=90, line_dash="dash", line_color="#94a3b8")
+    util_share_fig.add_hline(y=9, line_dash="dash", line_color="#94a3b8")
+    util_share_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
+    scatter_right.plotly_chart(util_share_fig, use_container_width=True)
+
+    bottom_left, bottom_right = st.columns(2)
+
+    # Utilization vs Daily Margin
+    bottom_left.plotly_chart(
         px.scatter(
             df,
             x="utilization_pct",
             y="daily_margin",
             color="recommendation",
-            size="fleet_size",
-            hover_data=["station", "segment", "market_share_pct", "recommended_fleet_delta"],
+            hover_data=[
+                "station",
+                "segment",
+                "market_share_pct",
+                "price_gap_pct",
+                "pricing_action",
+                "recommended_fleet_delta",
+            ],
             color_discrete_map=ACTION_COLORS,
             category_orders={"recommendation": ACTION_ORDER},
             labels={
@@ -135,12 +214,13 @@ def render_charts(df: pd.DataFrame) -> None:
         use_container_width=True,
     )
 
+    # Net Fleet Delta By Station
     station_delta = (
         df.groupby("station", as_index=False)["recommended_fleet_delta"]
         .sum()
         .sort_values("recommended_fleet_delta", ascending=False)
     )
-    scatter_right.plotly_chart(
+    bottom_right.plotly_chart(
         px.bar(
             station_delta.head(25),
             x="station",
@@ -162,6 +242,7 @@ def render_table(df: pd.DataFrame) -> None:
         "market_share_pct",
         "recommendation",
         "confidence",
+        "pricing_action",
         "recommended_fleet_delta",
         "reasoning",
     ]
@@ -209,6 +290,7 @@ def render_drilldown(df: pd.DataFrame) -> None:
     bottom[2].metric("Market Share", f"{row['market_share_pct']:.1f}%")
     bottom[3].metric("Target Fleet", f"{int(row['target_fleet_at_85_util']):,}")
 
+    st.caption(f"Pricing action: {row['pricing_action']}")
     st.write(row["reasoning"])
 
 

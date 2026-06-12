@@ -5,6 +5,10 @@ import pandas as pd
 from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
 
 
+BUY_SIGNAL_THRESHOLD = 0.35
+REDUCE_SIGNAL_THRESHOLD = -0.35
+
+
 def add_recommendations(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.DataFrame:
     recommended = df.copy()
     scored = recommended.apply(lambda row: score_row(row, config), axis=1)
@@ -20,8 +24,7 @@ def add_recommendations(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG)
 
 
 def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str, Any]:
-    buy_score = 0
-    reduce_score = 0
+    signal_points = 0
     reason_codes: list[str] = []
 
     util = float(row["utilization_pct"])
@@ -30,16 +33,16 @@ def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str
     price_gap_pct = float(row["price_gap_pct"])
 
     if util >= config.high_utilization_pct:
-        buy_score += 3
+        signal_points += 3
         reason_codes.append("utilization_above_90")
     elif util >= 88:
-        buy_score += 1
+        signal_points += 1
         reason_codes.append("utilization_near_upper_target")
     elif util < 70:
-        reduce_score += 3
+        signal_points -= 3
         reason_codes.append("utilization_below_70")
     elif util < config.underutilized_pct:
-        reduce_score += 2
+        signal_points -= 2
         reason_codes.append("utilization_below_75")
     elif 80 <= util <= 88:
         reason_codes.append("utilization_in_target_range")
@@ -47,67 +50,98 @@ def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str
         reason_codes.append("utilization_near_target")
 
     if margin <= 0:
-        reduce_score += 2
-        buy_score -= 4
+        signal_points -= 3
         reason_codes.append("non_positive_margin")
     elif margin < 15:
-        reduce_score += 1
+        signal_points -= 1
         reason_codes.append("thin_margin")
     elif margin >= 40:
-        buy_score += 1
+        signal_points += 1
         reason_codes.append("strong_margin")
     else:
         reason_codes.append("healthy_margin")
 
     if share >= config.strong_market_share_pct and util >= 88:
-        buy_score += 2
+        signal_points += 2
         reason_codes.append("strong_share_and_high_utilization")
     elif share >= config.strong_market_share_pct:
-        buy_score += 1
+        signal_points += 1
         reason_codes.append("strong_market_share")
     elif share < config.weak_market_share_pct and util < 80:
-        reduce_score += 2
+        signal_points -= 2
         reason_codes.append("weak_share_and_weak_utilization")
     elif share < config.weak_market_share_pct:
-        reduce_score += 1
+        signal_points -= 1
         reason_codes.append("weak_market_share")
     else:
         reason_codes.append("moderate_market_share")
 
     if price_gap_pct <= -10 and util >= config.high_utilization_pct:
-        buy_score -= 1
+        signal_points -= 1
         reason_codes.append("discounted_vs_competitor_with_high_utilization")
     elif price_gap_pct >= 5 and util >= config.high_utilization_pct:
-        buy_score += 1
+        signal_points += 1
         reason_codes.append("above_competitor_and_still_high_utilization")
     elif price_gap_pct >= 10 and util < 80:
-        reduce_score += 1
+        signal_points -= 1
         reason_codes.append("above_competitor_with_weak_utilization")
     else:
         reason_codes.append("pricing_near_competitor")
 
-    if buy_score >= 3 and buy_score > reduce_score and margin > 0:
+    recommendation_score = clamp(signal_points / 6, -1, 1)
+    if margin <= 0:
+        recommendation_score = min(recommendation_score, BUY_SIGNAL_THRESHOLD - 0.01)
+
+    if recommendation_score >= BUY_SIGNAL_THRESHOLD:
         recommendation = "BUY"
-    elif reduce_score >= 3 and reduce_score > buy_score:
+    elif recommendation_score <= REDUCE_SIGNAL_THRESHOLD:
         recommendation = "REDUCE"
     else:
         recommendation = "HOLD"
 
-    confidence_gap = abs(buy_score - reduce_score)
-    if confidence_gap >= 4:
+    directional_strength = abs(recommendation_score)
+    has_conflict = has_conflicting_reason_codes(reason_codes)
+    if recommendation == "HOLD" and not has_conflict:
         confidence = "high"
-    elif confidence_gap >= 2:
+    elif directional_strength >= 0.70 and not has_conflict:
+        confidence = "high"
+    elif directional_strength >= BUY_SIGNAL_THRESHOLD:
         confidence = "medium"
     else:
         confidence = "low"
 
     return {
         "recommendation": recommendation,
+        "recommendation_score": round(recommendation_score, 2),
         "confidence": confidence,
-        "buy_score": buy_score,
-        "reduce_score": reduce_score,
         "reason_codes": reason_codes,
     }
+
+
+def clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def has_conflicting_reason_codes(reason_codes: list[str]) -> bool:
+    buy_codes = {
+        "utilization_above_90",
+        "utilization_near_upper_target",
+        "strong_margin",
+        "strong_share_and_high_utilization",
+        "strong_market_share",
+        "above_competitor_and_still_high_utilization",
+    }
+    reduce_codes = {
+        "utilization_below_70",
+        "utilization_below_75",
+        "non_positive_margin",
+        "thin_margin",
+        "weak_share_and_weak_utilization",
+        "weak_market_share",
+        "discounted_vs_competitor_with_high_utilization",
+        "above_competitor_with_weak_utilization",
+    }
+    return bool(set(reason_codes) & buy_codes) and bool(set(reason_codes) & reduce_codes)
 
 
 def recommended_fleet_delta(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> int:

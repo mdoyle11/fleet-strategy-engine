@@ -43,9 +43,8 @@ OUTPUT_COLUMNS = [
     "pricing_signal",
     "market_share_signal",
     "recommendation",
+    "recommendation_score",
     "confidence",
-    "buy_score",
-    "reduce_score",
     "reason_codes",
     "reasoning",
 ]

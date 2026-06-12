@@ -124,22 +124,24 @@ def render_charts(df: pd.DataFrame) -> None:
         df,
         x="price_gap_pct",
         y="utilization_pct",
-        color="recommendation",
+        color="recommendation_score",
+        color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
+        range_color=[-1, 1],
         hover_data=[
             "station",
             "segment",
+            "recommendation",
+            "confidence",
             "daily_margin",
             "market_share_pct",
             "recommended_fleet_delta",
             "pricing_signal",
             "reason_codes",
         ],
-        color_discrete_map=ACTION_COLORS,
-        category_orders={"recommendation": ACTION_ORDER},
         labels={
             "price_gap_pct": "Price Gap vs Competitor %",
             "utilization_pct": "Utilization %",
-            "recommendation": "Action",
+            "recommendation_score": "Recommendation Signal",
         },
     )
     price_util_fig.add_hline(y=75, line_dash="dash", line_color="#94a3b8")
@@ -153,22 +155,24 @@ def render_charts(df: pd.DataFrame) -> None:
         df,
         x="utilization_pct",
         y="market_share_pct",
-        color="recommendation",
+        color="recommendation_score",
+        color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
+        range_color=[-1, 1],
         hover_data=[
             "station",
             "segment",
+            "recommendation",
+            "confidence",
             "daily_margin",
             "price_gap_pct",
             "recommended_fleet_delta",
             "pricing_signal",
             "reason_codes",
         ],
-        color_discrete_map=ACTION_COLORS,
-        category_orders={"recommendation": ACTION_ORDER},
         labels={
             "utilization_pct": "Utilization %",
             "market_share_pct": "Market Share %",
-            "recommendation": "Action",
+            "recommendation_score": "Recommendation Signal",
         },
     )
     util_share_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
@@ -189,6 +193,7 @@ def render_charts(df: pd.DataFrame) -> None:
             hover_data=[
                 "station",
                 "segment",
+                "recommendation_score",
                 "market_share_pct",
                 "price_gap_pct",
                 "pricing_signal",
@@ -232,6 +237,7 @@ def render_table(df: pd.DataFrame) -> None:
         "price_gap_pct",
         "market_share_pct",
         "recommendation",
+        "recommendation_score",
         "confidence",
         "pricing_signal",
         "recommended_fleet_delta",
@@ -249,6 +255,12 @@ def render_table(df: pd.DataFrame) -> None:
             "recommended_fleet_delta": st.column_config.NumberColumn(
                 "recommended_fleet_delta",
                 format="%+d",
+            ),
+            "recommendation_score": st.column_config.ProgressColumn(
+                "recommendation_score",
+                min_value=-1.0,
+                max_value=1.0,
+                format="%.2f",
             ),
         },
     )
@@ -271,7 +283,7 @@ def render_drilldown(df: pd.DataFrame) -> None:
     top = st.columns(5)
     top[0].metric("Action", row["recommendation"])
     top[1].metric("Confidence", row["confidence"])
-    top[2].metric("Fleet", f"{int(row['fleet_size']):,}")
+    top[2].metric("Signal", f"{row['recommendation_score']:+.2f}")
     top[3].metric("Delta", f"{int(row['recommended_fleet_delta']):+}")
     top[4].metric("Utilization", f"{row['utilization_pct']:.1f}%")
 

@@ -24,6 +24,7 @@ VALID_SEGMENTS = {"Economy", "SUV", "Premium", "Minivan", "Truck"}
 
 OUTPUT_COLUMNS = [
     "station",
+    "region",
     "segment",
     "fleet_size",
     "utilization_pct",

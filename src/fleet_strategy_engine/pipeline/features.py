@@ -5,6 +5,60 @@ import pandas as pd
 from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
 
 
+STATION_REGION_MAP = {
+    "ANC": "West",
+    "ATL": "South",
+    "AUS": "South",
+    "BNA": "South",
+    "BOS": "Northeast",
+    "BWI": "South",
+    "CLE": "Midwest",
+    "CLT": "South",
+    "CMH": "Midwest",
+    "DAL": "South",
+    "DEN": "West",
+    "DFW": "South",
+    "DTW": "Midwest",
+    "EWR": "Northeast",
+    "HNL": "West",
+    "HOU": "South",
+    "IAD": "South",
+    "IAH": "South",
+    "IND": "Midwest",
+    "JAX": "South",
+    "JFK": "Northeast",
+    "LAS": "West",
+    "LAX": "West",
+    "LGA": "Northeast",
+    "MCI": "Midwest",
+    "MCO": "South",
+    "MDW": "Midwest",
+    "MEM": "South",
+    "MIA": "South",
+    "MSP": "Midwest",
+    "MSY": "South",
+    "OAK": "West",
+    "OGG": "West",
+    "OKC": "South",
+    "OMA": "Midwest",
+    "ORD": "Midwest",
+    "PDX": "West",
+    "PHL": "Northeast",
+    "PHX": "West",
+    "PIT": "Northeast",
+    "RDU": "South",
+    "SAN": "West",
+    "SAT": "South",
+    "SEA": "West",
+    "SFO": "West",
+    "SJC": "West",
+    "SLC": "West",
+    "SMF": "West",
+    "STL": "Midwest",
+    "TPA": "South",
+}
+
+
 def add_features(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.DataFrame:
     featured = df.copy()
 
@@ -42,7 +96,12 @@ def add_features(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.
     featured["market_share_signal"] = featured["market_share_pct"].apply(
         lambda value: market_share_signal(value, config)
     )
+    featured["region"] = featured["station"].apply(station_region)
     return featured
+
+
+def station_region(station: str) -> str:
+    return STATION_REGION_MAP.get(str(station).upper(), "Unknown")
 
 
 def utilization_band(utilization_pct: float) -> str:
@@ -87,4 +146,3 @@ def market_share_signal(market_share_pct: float, config: EngineConfig = DEFAULT_
     if market_share_pct < config.weak_market_share_pct:
         return "weak_share"
     return "moderate_share"
-

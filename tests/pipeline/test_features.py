@@ -5,6 +5,7 @@ from fleet_strategy_engine.pipeline.features import (
     margin_band,
     market_share_signal,
     pricing_signal,
+    station_region,
     utilization_band,
 )
 
@@ -33,6 +34,15 @@ def test_add_features_calculates_core_metrics() -> None:
     assert result.loc[0, "price_gap_pct"] == -4
     assert result.loc[0, "estimated_rented_cars"] == 46
     assert result.loc[0, "target_fleet_at_85_util"] == 55
+    assert result.loc[0, "region"] == "Northeast"
+
+
+def test_station_region_maps_airport_codes_to_main_us_regions() -> None:
+    assert station_region("JFK") == "Northeast"
+    assert station_region("ATL") == "South"
+    assert station_region("ORD") == "Midwest"
+    assert station_region("LAX") == "West"
+    assert station_region("missing") == "Unknown"
 
 
 def test_band_helpers() -> None:
@@ -56,4 +66,3 @@ def test_signal_helpers() -> None:
     assert market_share_signal(8) == "weak_share"
     assert market_share_signal(12) == "moderate_share"
     assert market_share_signal(16) == "strong_share"
-

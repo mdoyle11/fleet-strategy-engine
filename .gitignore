@@ -4,6 +4,7 @@ PLAN.md
 .env
 .venv/
 .uv-cache/
+.pycache/
 __pycache__/
 *.py[cod]
 .pytest_cache/

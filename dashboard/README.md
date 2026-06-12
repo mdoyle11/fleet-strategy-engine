@@ -1,4 +1,10 @@
 # Dashboard
 
-Placeholder for the future Streamlit dashboard. The dashboard should import the reusable pipeline from `fleet_strategy_engine` and should not duplicate recommendation logic.
+Run the local dashboard with:
+
+```bash
+uv run streamlit run dashboard/app.py
+```
+
+The dashboard imports the reusable pipeline from `fleet_strategy_engine` and does not duplicate recommendation logic.
 

@@ -1,11 +1,18 @@
 import json
+import os
 from io import StringIO
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
 
+from fleet_strategy_engine.assistant import (
+    AssistantConfigurationError,
+    AssistantValidationError,
+    answer_question,
+)
 from fleet_strategy_engine.pipeline import run_recommendation_pipeline
 from fleet_strategy_engine.pipeline.validate import ValidationError
 
@@ -536,6 +543,79 @@ def render_downloads(df: pd.DataFrame, summary: dict) -> None:
     )
 
 
+def configure_assistant_environment() -> bool:
+    load_dotenv(override=True)
+    try:
+        secret_key = st.secrets.get("GOOGLE_API_KEY", "")
+        secret_model = st.secrets.get("GEMINI_MODEL", "")
+    except Exception:
+        secret_key = ""
+        secret_model = ""
+
+    if secret_key:
+        os.environ["GOOGLE_API_KEY"] = secret_key
+    if secret_model:
+        os.environ["GEMINI_MODEL"] = secret_model
+    return bool(os.environ.get("GOOGLE_API_KEY"))
+
+
+def render_assistant(df: pd.DataFrame) -> None:
+    st.subheader("Decision Assistant")
+    st.caption(
+        "Answers are constrained to the deterministic recommendations, metrics, "
+        "scores, confidence, and reason-code reference for the current filters."
+    )
+
+    if "assistant_messages" not in st.session_state:
+        st.session_state["assistant_messages"] = [
+            {
+                "role": "assistant",
+                "content": (
+                    "Ask about the current recommendations, why specific station "
+                    "segments are BUY/HOLD/REDUCE, or what themes appear in the "
+                    "filtered portfolio."
+                ),
+            }
+        ]
+
+    for message in st.session_state["assistant_messages"]:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if not configure_assistant_environment():
+        st.info("Set GOOGLE_API_KEY to enable the dashboard assistant.")
+        return
+
+    question = st.chat_input("Ask about the current recommendation output")
+    if not question:
+        return
+
+    st.session_state["assistant_messages"].append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Reviewing filtered recommendations..."):
+            try:
+                answer = answer_question(
+                    question,
+                    df,
+                    st.session_state["assistant_messages"][:-1],
+                )
+            except (
+                AssistantConfigurationError,
+                AssistantValidationError,
+                RuntimeError,
+                Exception,
+            ) as exc:
+                answer = str(exc)
+            st.markdown(answer)
+
+    st.session_state["assistant_messages"].append(
+        {"role": "assistant", "content": answer}
+    )
+
+
 st.title("Fleet Strategy Engine")
 
 with st.sidebar:
@@ -576,7 +656,7 @@ filtered_df = apply_filters(recommendations_df)
 
 render_summary(filtered_df)
 
-tabs = st.tabs(["Recommendations", "Charts", "Drilldown", "Downloads"])
+tabs = st.tabs(["Recommendations", "Charts", "Drilldown", "Assistant", "Downloads"])
 with tabs[0]:
     render_table(filtered_df)
 with tabs[1]:
@@ -587,4 +667,9 @@ with tabs[1]:
 with tabs[2]:
     render_drilldown(filtered_df)
 with tabs[3]:
+    if filtered_df.empty:
+        st.info("No rows match the current filters.")
+    else:
+        render_assistant(filtered_df)
+with tabs[4]:
     render_downloads(recommendations_df, summary_data)

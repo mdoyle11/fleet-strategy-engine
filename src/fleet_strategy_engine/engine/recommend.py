@@ -3,7 +3,6 @@ from typing import Any
 import pandas as pd
 
 from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
-from fleet_strategy_engine.engine.pricing import add_pricing_guidance
 
 
 def add_recommendations(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.DataFrame:
@@ -17,7 +16,7 @@ def add_recommendations(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG)
         lambda row: recommended_fleet_delta(row, config),
         axis=1,
     )
-    return add_pricing_guidance(recommended, config)
+    return recommended
 
 
 def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str, Any]:

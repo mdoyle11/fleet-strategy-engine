@@ -5,9 +5,6 @@ def add_explanations(df: pd.DataFrame) -> pd.DataFrame:
     explained = df.copy()
     explained["reasoning"] = explained.apply(explain_row, axis=1)
     explained["reason_codes"] = explained["reason_codes"].apply(lambda codes: "|".join(codes))
-    explained["pricing_reason_codes"] = explained["pricing_reason_codes"].apply(
-        lambda codes: "|".join(codes)
-    )
     return explained
 
 
@@ -18,7 +15,6 @@ def explain_row(row: pd.Series) -> str:
     share = float(row["market_share_pct"])
     delta = int(row["recommended_fleet_delta"])
     price_gap_pct = float(row["price_gap_pct"])
-    pricing_action = row["pricing_action"]
 
     if recommendation == "BUY":
         text = (
@@ -55,28 +51,4 @@ def explain_row(row: pd.Series) -> str:
     if caveats:
         text = f"{text} {' '.join(caveats)}"
 
-    return f"{text} Pricing guidance: {pricing_explanation(pricing_action, price_gap_pct, util, margin)}"
-
-
-def pricing_explanation(
-    pricing_action: str,
-    price_gap_pct: float,
-    utilization_pct: float,
-    daily_margin: float,
-) -> str:
-    if pricing_action == "RAISE_PRICE_TEST":
-        return (
-            f"test a rate increase because price is {abs(price_gap_pct):.1f}% below competitor "
-            f"while utilization is {utilization_pct:.1f}% and margin is ${daily_margin:.2f}."
-        )
-    if pricing_action == "HOLD_PRICE":
-        return (
-            f"current pricing appears defensible because price is {price_gap_pct:.1f}% versus competitor "
-            f"and utilization remains {utilization_pct:.1f}%."
-        )
-    if pricing_action == "PRICE_COMPETITIVENESS_REVIEW":
-        return (
-            f"review pricing and cost position because price gap is {price_gap_pct:.1f}% "
-            f"and daily margin is ${daily_margin:.2f}."
-        )
-    return "monitor price because pricing, utilization, and margin signals are balanced."
+    return text

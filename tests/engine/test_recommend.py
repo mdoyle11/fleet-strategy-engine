@@ -60,14 +60,12 @@ def test_discounted_high_utilization_is_cautious_buy_signal() -> None:
 
     assert row["recommendation"] == "BUY"
     assert row["confidence"] in {"medium", "high"}
+    assert row["pricing_signal"] == "high_utilization_but_discounted_vs_competitor"
     assert "discounted_vs_competitor_with_high_utilization" in row["reason_codes"]
-    assert row["pricing_action"] == "RAISE_PRICE_TEST"
-    assert "price_below_competitor_high_utilization_positive_margin" in row["pricing_reason_codes"]
 
 
 def test_above_competitor_high_utilization_strengthens_buy_signal() -> None:
     row = score_input(utilization_pct=94, avg_daily_rate=132, competitor_rate=125, market_share_pct=16)
 
     assert row["recommendation"] == "BUY"
-    assert row["pricing_action"] == "HOLD_PRICE"
     assert "above_competitor_and_still_high_utilization" in row["reason_codes"]

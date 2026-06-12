@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "purpose": "Reference mapping for deterministic recommendation reason codes. Use this file to help an LLM explain, summarize, or answer questions about recommendation outputs without inventing business logic.",
+  "score_scale": {
+    "recommendation_score": "A directional signal from -1.0 to 1.0. Negative values indicate REDUCE pressure, values near 0 indicate HOLD/neutral, and positive values indicate BUY pressure.",
+    "recommendation_bands": {
+      "REDUCE": "recommendation_score <= -0.35",
+      "HOLD": "-0.35 < recommendation_score < 0.35",
+      "BUY": "recommendation_score >= 0.35"
+    },
+    "confidence": "Separate from recommendation_score. Confidence describes how clear the final decision is, based on directional strength and whether reason codes conflict."
+  },
+  "reason_codes": {
+    "utilization_above_90": {
+      "category": "utilization",
+      "trigger": "utilization_pct >= 90",
+      "score_effect": "+3 signal points",
+      "decision_pressure": "BUY",
+      "business_meaning": "Fleet is likely capacity constrained. The station/segment may be turning away demand because too much of the fleet is rented on an average day.",
+      "llm_guidance": "Explain this as a strong demand signal. Do not claim it automatically means BUY; check margin, market share, and pricing reason codes for tradeoffs."
+    },
+    "utilization_near_upper_target": {
+      "category": "utilization",
+      "trigger": "88 <= utilization_pct < 90",
+      "score_effect": "+1 signal point",
+      "decision_pressure": "mild BUY",
+      "business_meaning": "Fleet is near the upper end of the desired utilization range. There may be some expansion opportunity, but the signal is not as strong as being above 90%.",
+      "llm_guidance": "Describe as mild upward pressure, not a standalone expansion case."
+    },
+    "utilization_below_70": {
+      "category": "utilization",
+      "trigger": "utilization_pct < 70",
+      "score_effect": "-3 signal points",
+      "decision_pressure": "REDUCE",
+      "business_meaning": "Fleet is materially underutilized. Too many vehicles may be sitting idle relative to demand.",
+      "llm_guidance": "Explain as a strong overfleet signal. Check market share and pricing codes to distinguish weak demand from pricing competitiveness issues."
+    },
+    "utilization_below_75": {
+      "category": "utilization",
+      "trigger": "70 <= utilization_pct < 75",
+      "score_effect": "-2 signal points",
+      "decision_pressure": "REDUCE",
+      "business_meaning": "Fleet is below the case-study overfleet threshold. This suggests the current fleet may be too large for average demand.",
+      "llm_guidance": "Explain as moderate reduce pressure. It can be offset by strong margin or strategic market-share context."
+    },
+    "utilization_in_target_range": {
+      "category": "utilization",
+      "trigger": "80 <= utilization_pct <= 88",
+      "score_effect": "0 signal points",
+      "decision_pressure": "neutral",
+      "business_meaning": "Fleet utilization is in the approximate target range. The current fleet size is likely balanced from a utilization standpoint.",
+      "llm_guidance": "Use this to support HOLD unless other reason codes strongly indicate expansion or reduction."
+    },
+    "utilization_near_target": {
+      "category": "utilization",
+      "trigger": "75 <= utilization_pct < 80",
+      "score_effect": "0 signal points",
+      "decision_pressure": "neutral to slight caution",
+      "business_meaning": "Fleet is slightly below the preferred utilization range but not low enough to be a strong overfleet signal.",
+      "llm_guidance": "Explain as near-balanced but worth monitoring. Do not overstate as REDUCE unless other weak-demand codes are present."
+    },
+    "non_positive_margin": {
+      "category": "margin",
+      "trigger": "daily_margin <= 0",
+      "score_effect": "-3 signal points and BUY guardrail",
+      "decision_pressure": "REDUCE or HOLD",
+      "business_meaning": "Rentals are not contributing positive daily margin after fleet and operating costs. Expanding fleet would scale weak or unprofitable economics.",
+      "llm_guidance": "This is a critical caveat. If utilization is high, explain that demand exists but economics are poor, so BUY should be blocked or treated cautiously."
+    },
+    "thin_margin": {
+      "category": "margin",
+      "trigger": "0 < daily_margin < 15",
+      "score_effect": "-1 signal point",
+      "decision_pressure": "mild REDUCE or HOLD",
+      "business_meaning": "Rentals are profitable but with limited margin cushion. Expansion may not generate attractive returns unless demand signals are very strong.",
+      "llm_guidance": "Explain as margin caution. It weakens a BUY case and can support HOLD when utilization is high but economics are not compelling."
+    },
+    "healthy_margin": {
+      "category": "margin",
+      "trigger": "15 <= daily_margin < 40",
+      "score_effect": "0 signal points",
+      "decision_pressure": "neutral",
+      "business_meaning": "Rentals have acceptable positive margin. Margin does not block fleet expansion, but it is not strong enough to add extra BUY pressure.",
+      "llm_guidance": "Use as supportive context for the final decision, especially when paired with utilization or market-share signals."
+    },
+    "strong_margin": {
+      "category": "margin",
+      "trigger": "daily_margin >= 40",
+      "score_effect": "+1 signal point",
+      "decision_pressure": "BUY",
+      "business_meaning": "Rentals generate strong daily margin. If demand is also strong, adding fleet is more economically attractive.",
+      "llm_guidance": "Explain as profitability support for BUY, not as a standalone fleet expansion reason."
+    },
+    "strong_share_and_high_utilization": {
+      "category": "market_share",
+      "trigger": "market_share_pct >= 15 and utilization_pct >= 88",
+      "score_effect": "+2 signal points",
+      "decision_pressure": "BUY",
+      "business_meaning": "The station/segment already has strong share and is highly utilized. This suggests strong customer demand despite an already meaningful market presence.",
+      "llm_guidance": "This is one of the strongest BUY support codes. Explain that demand appears structural, not merely a small base effect."
+    },
+    "strong_market_share": {
+      "category": "market_share",
+      "trigger": "market_share_pct >= 15 and utilization_pct < 88",
+      "score_effect": "+1 signal point",
+      "decision_pressure": "mild BUY",
+      "business_meaning": "The station/segment has strong market presence, which supports strategic confidence, but utilization is not high enough to be a strong capacity signal.",
+      "llm_guidance": "Frame as strategic support, not sufficient by itself for BUY."
+    },
+    "weak_share_and_weak_utilization": {
+      "category": "market_share",
+      "trigger": "market_share_pct < 9 and utilization_pct < 80",
+      "score_effect": "-2 signal points",
+      "decision_pressure": "REDUCE",
+      "business_meaning": "Low share and weak utilization together suggest a structural demand issue. More fleet is unlikely to solve the problem.",
+      "llm_guidance": "Explain as a strong REDUCE signal. Mention that issues may involve pricing, product fit, brand position, or local demand."
+    },
+    "weak_market_share": {
+      "category": "market_share",
+      "trigger": "market_share_pct < 9 and utilization_pct >= 80",
+      "score_effect": "-1 signal point",
+      "decision_pressure": "mild REDUCE or HOLD",
+      "business_meaning": "The station/segment has limited market share. Even with acceptable utilization, the strategic demand signal is weaker.",
+      "llm_guidance": "Use as caution against aggressive expansion. It can be outweighed by very high utilization and strong margin."
+    },
+    "moderate_market_share": {
+      "category": "market_share",
+      "trigger": "9 <= market_share_pct < 15",
+      "score_effect": "0 signal points",
+      "decision_pressure": "neutral",
+      "business_meaning": "Market share is neither clearly strong nor weak. It does not materially change the fleet recommendation.",
+      "llm_guidance": "Mention only when explaining balanced or HOLD outcomes; avoid overemphasizing it."
+    },
+    "discounted_vs_competitor_with_high_utilization": {
+      "category": "competitor_pricing",
+      "trigger": "price_gap_pct <= -10 and utilization_pct >= 90",
+      "score_effect": "-1 signal point",
+      "decision_pressure": "caution against aggressive BUY",
+      "business_meaning": "The segment is highly utilized while priced materially below the competitor. Some demand may be caused by underpricing rather than true fleet shortage.",
+      "llm_guidance": "Explain as an important tradeoff. A BUY may still be valid if margin and market share are strong, but summarize that pricing should be reviewed before aggressive expansion."
+    },
+    "above_competitor_and_still_high_utilization": {
+      "category": "competitor_pricing",
+      "trigger": "price_gap_pct >= 5 and utilization_pct >= 90",
+      "score_effect": "+1 signal point",
+      "decision_pressure": "BUY",
+      "business_meaning": "The segment is priced above the competitor and still has high utilization. This is evidence of strong demand and pricing power.",
+      "llm_guidance": "Use as strong support for BUY when margin is positive. This is the edge case where high utilization is less likely to be explained by discounting."
+    },
+    "above_competitor_with_weak_utilization": {
+      "category": "competitor_pricing",
+      "trigger": "price_gap_pct >= 10 and utilization_pct < 80",
+      "score_effect": "-1 signal point",
+      "decision_pressure": "REDUCE or HOLD",
+      "business_meaning": "The segment is priced materially above the competitor while utilization is weak. The fleet may be too large, and pricing may also be hurting demand.",
+      "llm_guidance": "Explain that REDUCE may be appropriate, but the root cause could include price competitiveness, not just fleet size."
+    },
+    "pricing_near_competitor": {
+      "category": "competitor_pricing",
+      "trigger": "No stronger competitor-pricing condition applies",
+      "score_effect": "0 signal points",
+      "decision_pressure": "neutral",
+      "business_meaning": "Pricing is close enough to the competitor that it does not materially change the interpretation of utilization.",
+      "llm_guidance": "Use as neutral context. The final decision should be explained primarily through utilization, margin, and market share."
+    }
+  },
+  "llm_response_guidelines": [
+    "Do not infer that any single reason code fully determines the recommendation.",
+    "Use recommendation_score for direction and strength, confidence for clarity, and reason_codes for explanation.",
+    "When BUY and REDUCE pressure reason codes both appear, explain the tradeoff explicitly.",
+    "When discounted_vs_competitor_with_high_utilization appears, mention possible underpricing before recommending aggressive fleet expansion.",
+    "When non_positive_margin appears, emphasize that fleet expansion is blocked or discouraged even if utilization is high.",
+    "When utilization_in_target_range appears with neutral margin, market share, and pricing codes, summarize HOLD as a balanced-fleet decision."
+  ]
+}

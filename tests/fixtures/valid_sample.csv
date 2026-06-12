@@ -1,5 +1,5 @@
 station,segment,fleet_size,utilization_pct,avg_daily_rate,avg_daily_fleet_cost,avg_daily_operating_cost,competitor_rate,market_share_pct
-AAA,SUV,50,92,120,35,15,125,16
-BBB,Economy,40,68,50,18,12,55,7
-CCC,Premium,25,84,180,75,25,185,12
+JFK,SUV,50,92,120,40,15,125,16
+LAX,Economy,80,84,55,18,12,60,12
+ORD,Premium,30,68,150,55,20,145,7
 

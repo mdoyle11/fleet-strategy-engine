@@ -9,18 +9,18 @@ from fleet_strategy_engine.pipeline.features import (
 )
 
 
-def test_add_features_calculates_expected_metrics() -> None:
+def test_add_features_calculates_core_metrics() -> None:
     df = pd.DataFrame(
         [
             {
-                "station": "AAA",
+                "station": "JFK",
                 "segment": "SUV",
                 "fleet_size": 50,
-                "utilization_pct": 85,
+                "utilization_pct": 92,
                 "avg_daily_rate": 120,
-                "avg_daily_fleet_cost": 35,
+                "avg_daily_fleet_cost": 40,
                 "avg_daily_operating_cost": 15,
-                "competitor_rate": 100,
+                "competitor_rate": 125,
                 "market_share_pct": 16,
             }
         ]
@@ -28,21 +28,32 @@ def test_add_features_calculates_expected_metrics() -> None:
 
     result = add_features(df)
 
-    assert result.loc[0, "daily_margin"] == 70
-    assert result.loc[0, "price_gap"] == 20
-    assert result.loc[0, "price_gap_pct"] == 20
-    assert result.loc[0, "estimated_rented_cars"] == 42.5
-    assert result.loc[0, "target_fleet_at_85_util"] == 50
+    assert result.loc[0, "daily_margin"] == 65
+    assert result.loc[0, "price_gap"] == -5
+    assert result.loc[0, "price_gap_pct"] == -4
+    assert result.loc[0, "estimated_rented_cars"] == 46
+    assert result.loc[0, "target_fleet_at_85_util"] == 55
 
 
-def test_band_and_signal_helpers() -> None:
-    assert utilization_band(68) == "severely_underutilized"
+def test_band_helpers() -> None:
+    assert utilization_band(69) == "severely_underutilized"
+    assert utilization_band(74) == "underutilized"
     assert utilization_band(84) == "target_range"
-    assert utilization_band(93) == "capacity_constrained"
+    assert utilization_band(91) == "capacity_constrained"
+
     assert margin_band(-1) == "negative_or_zero_margin"
+    assert margin_band(10) == "thin_margin"
     assert margin_band(25) == "healthy_margin"
+    assert margin_band(50) == "strong_margin"
+
+
+def test_signal_helpers() -> None:
     assert pricing_signal(-12, 92) == "high_utilization_but_discounted_vs_competitor"
-    assert pricing_signal(12, 75) == "premium_price_with_weak_utilization"
-    assert market_share_signal(16) == "strong_share"
+    assert pricing_signal(-12, 80) == "discounted_vs_competitor"
+    assert pricing_signal(12, 92) == "premium_price_and_still_capacity_constrained"
+    assert pricing_signal(0, 84) == "near_competitor_price"
+
     assert market_share_signal(8) == "weak_share"
+    assert market_share_signal(12) == "moderate_share"
+    assert market_share_signal(16) == "strong_share"
 

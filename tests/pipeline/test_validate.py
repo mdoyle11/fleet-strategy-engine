@@ -18,8 +18,16 @@ def test_missing_columns_fail_validation() -> None:
 
 
 def test_bad_numeric_values_fail_validation() -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="utilization_pct must be between 0 and 100"):
         validate_input(read_fixture("invalid_bad_values.csv"))
+
+
+def test_negative_fleet_size_fails_validation() -> None:
+    df = read_fixture("valid_sample.csv")
+    df.loc[0, "fleet_size"] = -2
+
+    with pytest.raises(ValidationError, match="fleet_size must be positive"):
+        validate_input(df)
 
 
 def test_duplicate_station_segment_rows_fail_validation() -> None:
@@ -34,3 +42,10 @@ def test_invalid_segment_fails_validation() -> None:
     with pytest.raises(ValidationError, match="Invalid segment"):
         validate_input(df)
 
+
+def test_zero_competitor_rate_fails_validation() -> None:
+    df = read_fixture("valid_sample.csv")
+    df.loc[0, "competitor_rate"] = 0
+
+    with pytest.raises(ValidationError, match="competitor_rate must be positive"):
+        validate_input(df)

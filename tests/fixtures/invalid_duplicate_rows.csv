@@ -1,4 +1,4 @@
 station,segment,fleet_size,utilization_pct,avg_daily_rate,avg_daily_fleet_cost,avg_daily_operating_cost,competitor_rate,market_share_pct
-AAA,SUV,50,92,120,35,15,125,16
-AAA,SUV,45,88,118,35,15,125,15
+JFK,SUV,50,92,120,40,15,125,16
+JFK,SUV,52,91,118,40,15,125,16
 

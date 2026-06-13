@@ -1,7 +1,9 @@
 import json
 import os
-from io import StringIO
+import uuid
+from io import BytesIO, StringIO
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import plotly.express as px
@@ -13,7 +15,12 @@ from fleet_strategy_engine.assistant import (
     AssistantValidationError,
     answer_question,
 )
-from fleet_strategy_engine.pipeline import run_recommendation_pipeline
+from fleet_strategy_engine.pipeline import (
+    INPUT_ARTIFACT,
+    load_pipeline_outputs,
+    local_run_dir,
+    run_recommendation_file_pipeline,
+)
 from fleet_strategy_engine.pipeline.validate import ValidationError
 
 
@@ -91,11 +98,21 @@ def load_sample_data() -> pd.DataFrame:
     return pd.read_csv(SAMPLE_DATA_PATH)
 
 
-def run_pipeline(input_df: pd.DataFrame) -> None:
-    recommendations, summary = run_recommendation_pipeline(input_df)
+def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
+    run_id = run_id or uuid.uuid4().hex
+    run_dir = local_run_dir(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    input_path = run_dir / INPUT_ARTIFACT
+    input_df.to_csv(input_path, index=False)
+    run_recommendation_file_pipeline(input_path, run_dir)
+    artifact_recommendations, artifact_summary = load_pipeline_outputs(run_dir)
+
     st.session_state["input_df"] = input_df
-    st.session_state["recommendations"] = recommendations
-    st.session_state["summary"] = summary
+    st.session_state["run_id"] = run_id
+    st.session_state["run_dir"] = str(run_dir)
+    st.session_state["recommendations"] = artifact_recommendations
+    st.session_state["summary"] = artifact_summary
 
 
 def ensure_region_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -518,9 +535,10 @@ def render_drilldown(df: pd.DataFrame) -> None:
 
 def render_downloads(df: pd.DataFrame, summary: dict) -> None:
     csv_buffer = StringIO()
+    parquet_buffer = BytesIO()
     df.to_csv(csv_buffer, index=False)
+    df.to_parquet(parquet_buffer, index=False)
     summary_json = json.dumps(summary, indent=2)
-    records_json = df.to_json(orient="records", indent=2)
 
     left, middle, right = st.columns(3)
     left.download_button(
@@ -530,10 +548,10 @@ def render_downloads(df: pd.DataFrame, summary: dict) -> None:
         mime="text/csv",
     )
     middle.download_button(
-        "Download recommendations JSON",
-        data=records_json,
-        file_name="recommendations.json",
-        mime="application/json",
+        "Download recommendations Parquet",
+        data=parquet_buffer.getvalue(),
+        file_name="recommendations.parquet",
+        mime="application/octet-stream",
     )
     right.download_button(
         "Download summary JSON",
@@ -621,7 +639,7 @@ st.title("Fleet Strategy Engine")
 with st.sidebar:
     st.header("Run")
     uploaded = st.file_uploader("Upload fleet performance CSV", type=["csv"])
-    use_sample = st.button("Load Sample Data", width="stretch")
+    use_sample = st.button("Reset to Sample Data", width="stretch")
     run_uploaded = st.button(
         "Run Recommendation",
         type="primary",
@@ -629,25 +647,28 @@ with st.sidebar:
         disabled=uploaded is None,
     )
 
+if "recommendations" not in st.session_state:
+    try:
+        run_pipeline(load_sample_data(), run_id="sample")
+    except (ValidationError, FileNotFoundError) as exc:
+        st.error(str(exc))
+        st.stop()
+
 if use_sample:
     try:
-        run_pipeline(load_sample_data())
-        st.success("Sample data processed.")
+        run_pipeline(load_sample_data(), run_id="sample")
+        st.success(f"Sample data processed: {st.session_state['run_dir']}")
     except (ValidationError, FileNotFoundError) as exc:
         st.error(str(exc))
 
 if run_uploaded and uploaded is not None:
     try:
         run_pipeline(pd.read_csv(uploaded))
-        st.success("Uploaded data processed.")
+        st.success(f"Uploaded data processed: {st.session_state['run_dir']}")
     except ValidationError as exc:
         st.error(f"Validation failed: {exc}")
     except Exception as exc:
         st.error(f"Could not process file: {exc}")
-
-if "recommendations" not in st.session_state:
-    st.info("Upload a CSV or load sample data to generate recommendations.")
-    st.stop()
 
 recommendations_df = ensure_region_column(st.session_state["recommendations"])
 st.session_state["recommendations"] = recommendations_df

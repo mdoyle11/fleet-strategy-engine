@@ -15,11 +15,12 @@ uv sync
 ```bash
 uv run python main.py \
   --input data/sample_data.csv \
-  --output outputs/recommendations.csv \
+  --output outputs/recommendations.parquet \
+  --csv-output outputs/recommendations.csv \
   --summary-output outputs/summary.json
 ```
 
-The CLI also writes `outputs/recommendations.json`.
+The Parquet file is the canonical row-level output for dashboard and future AWS processing. The CSV output is optional and intended for analyst download/export.
 
 ## Run Tests
 
@@ -32,9 +33,8 @@ uv run pytest
 - `src/fleet_strategy_engine/pipeline/`: validation, feature engineering, orchestration, and summaries.
 - `src/fleet_strategy_engine/engine/`: deterministic recommendation scoring and explanations.
 - `main.py`: thin CLI wrapper around the reusable pipeline.
-- `dashboard/`: placeholder for the later Streamlit app.
+- `dashboard/`: Streamlit dashboard that reads processed Parquet output and summary artifacts.
 
 ## Current Scope
 
-This phase includes only the local data pipeline and recommendation engine. Dashboard, AI interpretation, and AWS deployment will be added in later phases.
-
+The local MVP includes the deterministic data pipeline, Streamlit dashboard, and optional LangGraph/Gemini assistant. The dashboard now uses local Parquet artifacts so the read path can later move to S3 with minimal app changes.

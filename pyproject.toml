@@ -5,6 +5,7 @@ description = "Local-first fleet strategy recommendation engine"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "boto3>=1.34.0",
     "langchain-core>=0.2.0,<0.3.0",
     "langchain-google-genai>=1.0.0,<2.0.0",
     "langgraph>=0.2.0,<0.3.0",

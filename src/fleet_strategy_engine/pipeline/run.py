@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -7,15 +6,23 @@ from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
 from fleet_strategy_engine.engine.explain import add_explanations
 from fleet_strategy_engine.engine.recommend import add_recommendations
 from fleet_strategy_engine.pipeline.features import add_features
+from fleet_strategy_engine.pipeline.io import (
+    INPUT_ARTIFACT,
+    LOCAL_RUNS_URI,
+    RECOMMENDATIONS_ARTIFACT,
+    SUMMARY_ARTIFACT,
+    PathLike,
+    load_pipeline_outputs,
+    local_run_dir,
+    read_input_csv,
+    write_pipeline_outputs,
+)
 from fleet_strategy_engine.pipeline.summary import build_summary
 from fleet_strategy_engine.pipeline.validate import validate_input
 from fleet_strategy_engine.schemas import OUTPUT_COLUMNS
 
 
-LOCAL_RUNS_DIR = Path("outputs/runs")
-INPUT_ARTIFACT = "input.csv"
-RECOMMENDATIONS_ARTIFACT = "recommendations.parquet"
-SUMMARY_ARTIFACT = "summary.json"
+LOCAL_RUNS_DIR = Path(LOCAL_RUNS_URI)
 
 
 def run_recommendation_pipeline(
@@ -30,36 +37,12 @@ def run_recommendation_pipeline(
     return explained[OUTPUT_COLUMNS], summary
 
 
-def local_run_dir(run_id: str, base_dir: Path = LOCAL_RUNS_DIR) -> Path:
-    return base_dir / run_id
-
-
 def run_recommendation_file_pipeline(
-    input_path: Path,
-    output_dir: Path,
+    input_path: PathLike,
+    output_dir: PathLike,
     config: EngineConfig = DEFAULT_CONFIG,
 ) -> tuple[pd.DataFrame, dict]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    input_df = pd.read_csv(input_path)
+    input_df = read_input_csv(input_path)
     recommendations, summary = run_recommendation_pipeline(input_df, config)
     write_pipeline_outputs(recommendations, summary, output_dir)
-    return recommendations, summary
-
-
-def write_pipeline_outputs(
-    recommendations: pd.DataFrame,
-    summary: dict,
-    output_dir: Path,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    recommendations.to_parquet(output_dir / RECOMMENDATIONS_ARTIFACT, index=False)
-    (output_dir / SUMMARY_ARTIFACT).write_text(
-        json.dumps(summary, indent=2),
-        encoding="utf-8",
-    )
-
-
-def load_pipeline_outputs(output_dir: Path) -> tuple[pd.DataFrame, dict]:
-    recommendations = pd.read_parquet(output_dir / RECOMMENDATIONS_ARTIFACT)
-    summary = json.loads((output_dir / SUMMARY_ARTIFACT).read_text(encoding="utf-8"))
     return recommendations, summary

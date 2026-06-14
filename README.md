@@ -28,13 +28,31 @@ The Parquet file is the canonical row-level output for dashboard and future AWS 
 uv run pytest
 ```
 
+## Artifact Storage
+
+The pipeline writes row-level recommendations to Parquet and summary metrics to JSON. The dashboard uses the same artifact path locally and in AWS:
+
+```text
+{artifact_base_uri}/{run_id}/input.csv
+{artifact_base_uri}/{run_id}/recommendations.parquet
+{artifact_base_uri}/{run_id}/summary.json
+```
+
+By default, `artifact_base_uri` is `outputs/runs`. To point the dashboard at S3, set:
+
+```bash
+export FLEET_ARTIFACT_BASE_URI="s3://your-bucket/processed/runs"
+```
+
 ## Project Layout
 
 - `src/fleet_strategy_engine/pipeline/`: validation, feature engineering, orchestration, and summaries.
 - `src/fleet_strategy_engine/engine/`: deterministic recommendation scoring and explanations.
 - `main.py`: thin CLI wrapper around the reusable pipeline.
 - `dashboard/`: Streamlit dashboard that reads processed Parquet output and summary artifacts.
+- `infra/terraform/`: initial AWS infrastructure for the artifact bucket.
+- `Dockerfile.lambda`: container image entrypoint for Lambda-backed pipeline execution.
 
 ## Current Scope
 
-The local MVP includes the deterministic data pipeline, Streamlit dashboard, and optional LangGraph/Gemini assistant. The dashboard now uses local Parquet artifacts so the read path can later move to S3 with minimal app changes.
+The local MVP includes the deterministic data pipeline, Streamlit dashboard, and optional LangGraph/Gemini assistant. The dashboard now uses a local-or-S3 artifact URI so the read/write path can move to S3 without changing recommendation logic.

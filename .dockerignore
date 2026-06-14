@@ -1,0 +1,12 @@
+.git
+.venv
+.uv-cache
+.pytest_cache
+__pycache__
+*.pyc
+.env
+outputs
+eda.ipynb
+infra/terraform/.terraform
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup

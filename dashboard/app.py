@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import uuid
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -17,14 +18,23 @@ from fleet_strategy_engine.assistant import (
 )
 from fleet_strategy_engine.pipeline import (
     INPUT_ARTIFACT,
+    LOCAL_RUNS_URI,
+    artifact_display_uri,
+    artifact_uri,
     load_pipeline_outputs,
-    local_run_dir,
+    pipeline_outputs_exist,
+    run_artifact_uri,
     run_recommendation_file_pipeline,
+    write_input_csv,
 )
 from fleet_strategy_engine.pipeline.validate import ValidationError
 
 
 SAMPLE_DATA_PATH = Path("data/sample_data.csv")
+ARTIFACT_BASE_URI_ENV = "FLEET_ARTIFACT_BASE_URI"
+PIPELINE_EXECUTION_MODE_ENV = "FLEET_PIPELINE_EXECUTION_MODE"
+RAW_UPLOAD_BASE_URI_ENV = "FLEET_RAW_UPLOAD_BASE_URI"
+PIPELINE_WAIT_SECONDS_ENV = "FLEET_PIPELINE_WAIT_SECONDS"
 ACTION_ORDER = ["BUY", "HOLD", "REDUCE"]
 REGION_ORDER = ["Northeast", "South", "Midwest", "West", "Unknown"]
 SEGMENT_ORDER = ["Economy", "SUV", "Premium", "Minivan", "Truck"]
@@ -87,6 +97,8 @@ ACTION_COLORS = {
 }
 
 
+load_dotenv(override=True)
+
 st.set_page_config(
     page_title="Fleet Strategy Engine",
     page_icon="",
@@ -98,21 +110,56 @@ def load_sample_data() -> pd.DataFrame:
     return pd.read_csv(SAMPLE_DATA_PATH)
 
 
+def artifact_base_uri() -> str:
+    return os.environ.get(ARTIFACT_BASE_URI_ENV, LOCAL_RUNS_URI)
+
+
+def raw_upload_base_uri() -> str:
+    return os.environ.get(RAW_UPLOAD_BASE_URI_ENV, "outputs/raw/uploads")
+
+
+def pipeline_execution_mode() -> str:
+    return os.environ.get(PIPELINE_EXECUTION_MODE_ENV, "inline").lower()
+
+
+def pipeline_wait_seconds() -> int:
+    return int(os.environ.get(PIPELINE_WAIT_SECONDS_ENV, "30"))
+
+
 def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
     run_id = run_id or uuid.uuid4().hex
-    run_dir = local_run_dir(run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_uri = run_artifact_uri(run_id, artifact_base_uri())
 
-    input_path = run_dir / INPUT_ARTIFACT
-    input_df.to_csv(input_path, index=False)
-    run_recommendation_file_pipeline(input_path, run_dir)
-    artifact_recommendations, artifact_summary = load_pipeline_outputs(run_dir)
+    if pipeline_execution_mode() == "lambda":
+        raw_run_uri = run_artifact_uri(run_id, raw_upload_base_uri())
+        write_input_csv(input_df, raw_run_uri)
+        wait_for_pipeline_outputs(run_uri)
+        st.session_state["raw_run_uri"] = artifact_display_uri(raw_run_uri)
+    else:
+        write_input_csv(input_df, run_uri)
+        run_recommendation_file_pipeline(
+            artifact_uri(run_uri, INPUT_ARTIFACT),
+            run_uri,
+        )
+
+    artifact_recommendations, artifact_summary = load_pipeline_outputs(run_uri)
 
     st.session_state["input_df"] = input_df
     st.session_state["run_id"] = run_id
-    st.session_state["run_dir"] = str(run_dir)
+    st.session_state["run_uri"] = artifact_display_uri(run_uri)
     st.session_state["recommendations"] = artifact_recommendations
     st.session_state["summary"] = artifact_summary
+
+
+def wait_for_pipeline_outputs(run_uri: str) -> None:
+    deadline = time.time() + pipeline_wait_seconds()
+    while time.time() < deadline:
+        if pipeline_outputs_exist(run_uri):
+            return
+        time.sleep(1)
+    raise TimeoutError(
+        "Timed out waiting for Lambda to write recommendations.parquet and summary.json."
+    )
 
 
 def ensure_region_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -562,7 +609,6 @@ def render_downloads(df: pd.DataFrame, summary: dict) -> None:
 
 
 def configure_assistant_environment() -> bool:
-    load_dotenv(override=True)
     try:
         secret_key = st.secrets.get("GOOGLE_API_KEY", "")
         secret_model = st.secrets.get("GEMINI_MODEL", "")
@@ -657,14 +703,14 @@ if "recommendations" not in st.session_state:
 if use_sample:
     try:
         run_pipeline(load_sample_data(), run_id="sample")
-        st.success(f"Sample data processed: {st.session_state['run_dir']}")
+        st.success(f"Sample data processed: {st.session_state['run_uri']}")
     except (ValidationError, FileNotFoundError) as exc:
         st.error(str(exc))
 
 if run_uploaded and uploaded is not None:
     try:
         run_pipeline(pd.read_csv(uploaded))
-        st.success(f"Uploaded data processed: {st.session_state['run_dir']}")
+        st.success(f"Uploaded data processed: {st.session_state['run_uri']}")
     except ValidationError as exc:
         st.error(f"Validation failed: {exc}")
     except Exception as exc:

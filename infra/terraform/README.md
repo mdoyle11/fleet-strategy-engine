@@ -1,10 +1,10 @@
 # Terraform
 
-This is the initial AWS foundation for the fleet strategy deployment. It creates the S3 artifact bucket that holds raw uploads and processed pipeline outputs. It also creates an ECR repository for the pipeline Lambda container image.
+This is the AWS foundation for the fleet strategy deployment. It creates the S3 artifact bucket that holds raw uploads and processed pipeline outputs, ECR repositories for container images, the pipeline Lambda, and dashboard hosting resources.
 
 The default retention settings are intentionally small for local MVP use:
 
-- ECR keeps the latest 2 container images.
+- ECR keeps the latest 2 container images per repository.
 - S3 raw uploads under `raw/uploads/` expire after 7 days.
 - S3 processed runs under `processed/runs/` expire after 30 days.
 - Noncurrent S3 object versions expire after 7 days.
@@ -39,7 +39,7 @@ s3://bucket/processed/runs/{run_id}/recommendations.parquet
 s3://bucket/processed/runs/{run_id}/summary.json
 ```
 
-When the upload-triggered pipeline is added, raw uploads should use a separate prefix:
+Dashboard uploads use a separate raw upload prefix:
 
 ```text
 s3://bucket/raw/uploads/{run_id}/input.csv
@@ -92,4 +92,56 @@ s3://bucket/processed/runs/{run_id}/recommendations.parquet
 s3://bucket/processed/runs/{run_id}/summary.json
 ```
 
-ECS hosting, latest-run manifests, and stricter least-privilege IAM can be added after this Lambda path is verified.
+## Dashboard Hosting
+
+The dashboard deployment uses ECS Express Mode through `aws_ecs_express_gateway_service`. Express Mode manages the public load balancer, HTTPS endpoint, target groups, service security group, and autoscaling resources around the dashboard container. Terraform still manages the ECR repository, ECS cluster, CloudWatch log group, IAM task execution role, IAM infrastructure role, and IAM task role.
+
+Create the optional Gemini key as a free-tier-friendly SSM Parameter Store standard SecureString:
+
+```bash
+aws ssm put-parameter \
+  --name "/fleet-strategy-engine/dev/google-api-key" \
+  --type SecureString \
+  --value "YOUR_GEMINI_API_KEY" \
+  --overwrite
+```
+
+Build and push the dashboard image for the Fargate platform used by ECS Express:
+
+```bash
+AWS_REGION="us-east-1"
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+DASHBOARD_REPOSITORY_URL="$(terraform output -raw dashboard_repository_url)"
+
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+docker buildx build --platform linux/amd64 \
+  -f ../../Dockerfile.dashboard \
+  -t "${DASHBOARD_REPOSITORY_URL}:latest" \
+  --push ../..
+```
+
+Use the pushed image digest for the dashboard deployment. This avoids mutable-tag drift and ensures ECS deploys the exact image you just pushed.
+
+```bash
+PIPELINE_REPOSITORY_URL="$(terraform output -raw pipeline_lambda_repository_url)"
+DASHBOARD_IMAGE_DIGEST="$(aws ecr describe-images \
+  --repository-name fleet-strategy-engine-dev-dashboard \
+  --image-ids imageTag=latest \
+  --query 'imageDetails[0].imageDigest' \
+  --output text)"
+
+terraform apply \
+  -var="lambda_image_uri=${PIPELINE_REPOSITORY_URL}:latest" \
+  -var="dashboard_image_uri=${DASHBOARD_REPOSITORY_URL}@${DASHBOARD_IMAGE_DIGEST}" \
+  -var="google_api_key_parameter_name=/fleet-strategy-engine/dev/google-api-key"
+```
+
+After deployment, get the public dashboard URL:
+
+```bash
+terraform output -raw dashboard_url
+```
+
+The deployed dashboard runs with Lambda-backed pipeline execution and reads/writes the same S3 artifact layout used by local S3 mode.

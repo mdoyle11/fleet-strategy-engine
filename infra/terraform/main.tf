@@ -13,7 +13,7 @@ locals {
 
 resource "aws_s3_bucket" "artifacts" {
   bucket_prefix = "${local.name_prefix}-artifacts-"
-  force_destroy = false
+  force_destroy = true
 
   tags = local.common_tags
 }
@@ -94,6 +94,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
 resource "aws_ecr_repository" "pipeline_lambda" {
   name                 = "${local.name_prefix}-pipeline-lambda"
   image_tag_mutability = "MUTABLE"
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true

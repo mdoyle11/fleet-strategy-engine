@@ -22,3 +22,26 @@ output "pipeline_lambda_function_name" {
   description = "Pipeline Lambda function name, once lambda_image_uri is provided."
   value       = var.lambda_image_uri == "" ? "" : aws_lambda_function.pipeline[0].function_name
 }
+
+output "dashboard_repository_url" {
+  description = "ECR repository URL for the Streamlit dashboard container image."
+  value       = aws_ecr_repository.dashboard.repository_url
+}
+
+output "dashboard_url" {
+  description = "Public dashboard URL, once dashboard_image_uri is provided."
+  value = var.dashboard_image_uri == "" ? "" : try(
+    one([
+      for path in aws_ecs_express_gateway_service.dashboard[0].ingress_paths :
+      path.endpoint
+      if path.access_type == "PUBLIC"
+    ]),
+    aws_ecs_express_gateway_service.dashboard[0].ingress_paths[0].endpoint,
+    "",
+  )
+}
+
+output "google_api_key_parameter_name" {
+  description = "Suggested SSM parameter name for the dashboard GOOGLE_API_KEY."
+  value       = "/${var.project_name}/${var.environment}/google-api-key"
+}

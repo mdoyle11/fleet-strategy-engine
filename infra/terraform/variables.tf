@@ -22,8 +22,49 @@ variable "lambda_image_uri" {
   default     = ""
 }
 
+variable "dashboard_image_uri" {
+  description = "Container image URI for the Streamlit dashboard. Leave empty until the image is built and pushed."
+  type        = string
+  default     = ""
+}
+
+variable "dashboard_cpu" {
+  description = "Fargate CPU units for the dashboard task."
+  type        = number
+  default     = 512
+}
+
+variable "dashboard_memory" {
+  description = "Fargate memory in MiB for the dashboard task."
+  type        = number
+  default     = 1024
+}
+
+variable "dashboard_min_capacity" {
+  description = "Minimum number of dashboard tasks for service autoscaling."
+  type        = number
+  default     = 1
+}
+
+variable "dashboard_max_capacity" {
+  description = "Maximum number of dashboard tasks for service autoscaling."
+  type        = number
+  default     = 2
+}
+
+variable "google_api_key_parameter_name" {
+  description = "Optional SSM Parameter Store SecureString name for GOOGLE_API_KEY. Leave empty to deploy the dashboard without the assistant key."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.google_api_key_parameter_name == "" || startswith(var.google_api_key_parameter_name, "/")
+    error_message = "google_api_key_parameter_name must be empty or start with '/'."
+  }
+}
+
 variable "ecr_max_images" {
-  description = "Maximum number of Lambda container images to retain in ECR."
+  description = "Maximum number of container images to retain in each ECR repository."
   type        = number
   default     = 2
 }

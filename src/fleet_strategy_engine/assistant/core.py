@@ -1,14 +1,13 @@
 import json
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 import pandas as pd
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.graph import END, StateGraph
-from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
+
+from fleet_strategy_engine.assistant.scenario_tools import ScenarioToolError, run_scenario_tool
 
 
 REASON_CODE_REFERENCE_PATH = Path("docs/reason_code_reference.json")
@@ -59,6 +58,70 @@ Rules:
   reason-code reference.
 """
 
+SCENARIO_TOOL_SYSTEM_PROMPT = """
+You are a scenario assistant for a deterministic fleet recommendation dashboard.
+
+Choose exactly one tool call from the user's request and return only valid JSON.
+Do not include markdown, prose, or comments.
+
+Available tools:
+1. run_rule_scenario
+Use when the user wants to change planning rule thresholds.
+Arguments shape:
+{
+  "tool": "run_rule_scenario",
+  "arguments": {
+    "updates": {
+      "target_utilization": 0.85,
+      "max_delta_pct": 0.20,
+      "weak_market_share_pct": 9,
+      "strong_market_share_pct": 15,
+      "underutilized_pct": 75,
+      "high_utilization_pct": 90,
+      "thin_roi_threshold": 0.25,
+      "strong_roi_threshold": 0.75
+    }
+  }
+}
+
+2. run_metric_scenario
+Use when the user wants to change observed metrics for one station / segment.
+Arguments shape:
+{
+  "tool": "run_metric_scenario",
+  "arguments": {
+    "station": "ATL",
+    "segment": "SUV",
+    "updates": {
+      "fleet_size": 57,
+      "utilization_pct": 87,
+      "avg_daily_rate": 145,
+      "avg_daily_fleet_cost": 43,
+      "avg_daily_operating_cost": 14,
+      "competitor_rate": 136,
+      "market_share_pct": 16.5
+    }
+  }
+}
+
+Only include fields the user explicitly asked to change. If the request is ambiguous,
+return:
+{"tool": "none", "arguments": {}, "issue": "what is missing"}
+
+Do not invent station/segment pairs. Use only station/segment pairs visible in the
+provided dashboard context.
+"""
+
+SCENARIO_ANSWER_SYSTEM_PROMPT = """
+You are a scenario assistant embedded in a fleet strategy dashboard.
+
+The deterministic scenario tool result is the source of truth. Explain what was
+changed, how the deterministic BUY/HOLD/REDUCE recommendation output changed,
+and which reason codes or fragile rows matter. Do not claim that changing price,
+cost, utilization, or market share will causally change demand. Describe the
+result as a simulated rerun of deterministic logic.
+"""
+
 
 class AssistantConfigurationError(RuntimeError):
     pass
@@ -66,15 +129,6 @@ class AssistantConfigurationError(RuntimeError):
 
 class AssistantValidationError(RuntimeError):
     pass
-
-
-class AssistantState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
-    context: dict[str, Any]
-    answer: str
-    validation: dict[str, Any]
-    repair_attempts: int
-    final_answer: str
 
 
 def load_reason_code_reference(path: Path = REASON_CODE_REFERENCE_PATH) -> dict[str, Any]:
@@ -184,6 +238,30 @@ def parse_validation_result(raw_result: str) -> dict[str, Any]:
     }
 
 
+def parse_scenario_tool_request(raw_result: str) -> dict[str, Any]:
+    cleaned = raw_result.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        cleaned = cleaned.removeprefix("json").strip()
+
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise AssistantValidationError("Scenario assistant returned non-JSON output.") from exc
+
+    tool = result.get("tool")
+    if tool not in {"run_rule_scenario", "run_metric_scenario", "none"}:
+        raise AssistantValidationError("Scenario assistant returned an unsupported tool.")
+    arguments = result.get("arguments", {})
+    if not isinstance(arguments, dict):
+        raise AssistantValidationError("Scenario assistant returned invalid tool arguments.")
+    return {
+        "tool": tool,
+        "arguments": arguments,
+        "issue": str(result.get("issue", "")),
+    }
+
+
 def latest_question(messages: list[BaseMessage]) -> str:
     for message in reversed(messages):
         if isinstance(message, HumanMessage):
@@ -236,98 +314,6 @@ def deterministic_fallback(context: dict[str, Any], validation_issue: str) -> st
     )
 
 
-def generate_answer_node(state: AssistantState) -> dict[str, Any]:
-    response = llm().invoke(
-        [
-            system_with_context(ANSWER_SYSTEM_PROMPT, state["context"]),
-            *state["messages"][-8:],
-        ]
-    )
-    return {"answer": text_from_response(response)}
-
-
-def validate_answer_node(state: AssistantState) -> dict[str, Any]:
-    question = latest_question(state["messages"])
-    response = llm().invoke(
-        [
-            system_with_context(VALIDATOR_SYSTEM_PROMPT, state["context"]),
-            HumanMessage(
-                content=(
-                    f"User question:\n{question}\n\n"
-                    f"Assistant answer to validate:\n{state['answer']}"
-                )
-            ),
-        ]
-    )
-    return {"validation": parse_validation_result(text_from_response(response))}
-
-
-def repair_answer_node(state: AssistantState) -> dict[str, Any]:
-    question = latest_question(state["messages"])
-    response = llm().invoke(
-        [
-            system_with_context(REPAIR_SYSTEM_PROMPT, state["context"]),
-            HumanMessage(
-                content=(
-                    f"User question:\n{question}\n\n"
-                    f"Validation issue:\n{state['validation'].get('issue', '')}\n\n"
-                    f"Draft answer:\n{state['answer']}"
-                )
-            ),
-        ]
-    )
-    return {
-        "answer": text_from_response(response),
-        "repair_attempts": state["repair_attempts"] + 1,
-    }
-
-
-def fallback_node(state: AssistantState) -> dict[str, Any]:
-    return {
-        "final_answer": deterministic_fallback(
-            state["context"],
-            state["validation"].get("issue", ""),
-        )
-    }
-
-
-def finalize_node(state: AssistantState) -> dict[str, Any]:
-    return {"final_answer": state["answer"]}
-
-
-def route_after_validation(state: AssistantState) -> str:
-    if state["validation"].get("valid"):
-        return "finalize"
-    if state["repair_attempts"] < MAX_REPAIR_ATTEMPTS:
-        return "repair_answer"
-    return "fallback"
-
-
-def build_assistant_graph():
-    graph = StateGraph(AssistantState)
-    graph.add_node("generate_answer", generate_answer_node)
-    graph.add_node("validate_answer", validate_answer_node)
-    graph.add_node("repair_answer", repair_answer_node)
-    graph.add_node("fallback", fallback_node)
-    graph.add_node("finalize", finalize_node)
-
-    graph.set_entry_point("generate_answer")
-    graph.add_edge("generate_answer", "validate_answer")
-    graph.add_conditional_edges(
-        "validate_answer",
-        route_after_validation,
-        {
-            "finalize": "finalize",
-            "repair_answer": "repair_answer",
-            "fallback": "fallback",
-        },
-    )
-    graph.add_edge("repair_answer", "validate_answer")
-    graph.add_edge("fallback", END)
-    graph.add_edge("finalize", END)
-    return graph.compile()
-
-
 def history_to_messages(chat_history: list[dict[str, str]]) -> list[BaseMessage]:
     messages: list[BaseMessage] = []
     for message in chat_history[-8:]:
@@ -341,6 +327,8 @@ def answer_question(
     df: pd.DataFrame,
     chat_history: list[dict[str, str]],
 ) -> str:
+    from fleet_strategy_engine.assistant.graph import build_assistant_graph
+
     try:
         final_state = build_assistant_graph().invoke(
             {
@@ -363,3 +351,121 @@ def answer_question(
             ) from exc
         raise RuntimeError(f"Gemini assistant request failed: {message}") from exc
     return final_state["final_answer"]
+
+
+def available_opportunities(df: pd.DataFrame) -> list[dict[str, str]]:
+    return (
+        df[["station", "segment"]]
+        .drop_duplicates()
+        .sort_values(["station", "segment"])
+        .to_dict(orient="records")
+    )
+
+
+def scenario_tool_context(df: pd.DataFrame, scope: str) -> dict[str, Any]:
+    return {
+        "scope": scope,
+        "available_opportunities": available_opportunities(df),
+        "allowed_rule_fields": [
+            "target_utilization",
+            "max_delta_pct",
+            "weak_market_share_pct",
+            "strong_market_share_pct",
+            "underutilized_pct",
+            "high_utilization_pct",
+            "thin_roi_threshold",
+            "strong_roi_threshold",
+        ],
+        "allowed_metric_fields": [
+            "fleet_size",
+            "utilization_pct",
+            "avg_daily_rate",
+            "avg_daily_fleet_cost",
+            "avg_daily_operating_cost",
+            "competitor_rate",
+            "market_share_pct",
+        ],
+    }
+
+
+def deterministic_scenario_fallback(result: dict[str, Any]) -> str:
+    if result.get("tool") == "run_rule_scenario":
+        counts = result["scenario_counts"]
+        return (
+            "Scenario tool result:\n\n"
+            f"Changed rows: {result['changed_row_count']}\n"
+            f"Scenario BUY / HOLD / REDUCE counts: "
+            f"{counts['BUY']} / {counts['HOLD']} / {counts['REDUCE']}\n"
+            f"Net fleet delta changed from {result['baseline_net_delta']:+} "
+            f"to {result['scenario_net_delta']:+}.\n"
+            "This is a deterministic rule rerun, not a demand forecast."
+        )
+    scenario = result["scenario"]
+    current = result["current"]
+    return (
+        "Scenario tool result:\n\n"
+        f"{result['station']} / {result['segment']} changed from "
+        f"{current['recommendation']} to {scenario['recommendation']} "
+        f"with score change {result['score_change']:+.2f} and fleet delta change "
+        f"{result['delta_change']:+}.\n"
+        "This is a deterministic metric rerun, not a demand forecast."
+    )
+
+
+def answer_scenario_question(
+    question: str,
+    df: pd.DataFrame,
+    chat_history: list[dict[str, str]],
+    scope: str,
+) -> str:
+    context = scenario_tool_context(df, scope)
+    try:
+        tool_response = llm().invoke(
+            [
+                system_with_context(SCENARIO_TOOL_SYSTEM_PROMPT, context),
+                *history_to_messages(chat_history),
+                HumanMessage(content=question),
+            ]
+        )
+        tool_request = parse_scenario_tool_request(text_from_response(tool_response))
+        if tool_request["tool"] == "none":
+            return tool_request["issue"] or "Please specify the scenario to run."
+
+        if scope == "rules" and tool_request["tool"] != "run_rule_scenario":
+            return "This rules scenario assistant can only change rule thresholds."
+        if scope == "metrics" and tool_request["tool"] != "run_metric_scenario":
+            return "This metrics scenario assistant can only change one opportunity's metrics."
+
+        tool_result = run_scenario_tool(
+            df,
+            tool_request["tool"],
+            tool_request["arguments"],
+        )
+        answer_response = llm().invoke(
+            [
+                system_with_context(
+                    SCENARIO_ANSWER_SYSTEM_PROMPT,
+                    {
+                        "scenario_tool_request": tool_request,
+                        "scenario_tool_result": tool_result,
+                    },
+                ),
+                HumanMessage(content=question),
+            ]
+        )
+        answer = text_from_response(answer_response)
+        if answer:
+            return answer
+        return deterministic_scenario_fallback(tool_result)
+    except AssistantConfigurationError:
+        raise
+    except (AssistantValidationError, ScenarioToolError) as exc:
+        return str(exc)
+    except Exception as exc:
+        message = str(exc)
+        if "API_KEY_INVALID" in message or "API key not valid" in message:
+            raise RuntimeError(
+                "Gemini rejected the API key. Check that GOOGLE_API_KEY in your "
+                ".env file is a valid Gemini API key, then restart Streamlit."
+            ) from exc
+        raise RuntimeError(f"Gemini scenario assistant request failed: {message}") from exc

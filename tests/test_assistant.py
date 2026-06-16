@@ -6,6 +6,7 @@ from fleet_strategy_engine.assistant import (
     build_assistant_context,
     deterministic_fallback,
     parse_validation_result,
+    parse_scenario_tool_request,
     route_after_validation,
 )
 
@@ -72,6 +73,19 @@ def test_parse_validation_result_requires_boolean_valid_flag() -> None:
 
     with pytest.raises(AssistantValidationError):
         parse_validation_result("not json")
+
+
+def test_parse_scenario_tool_request_requires_supported_tool() -> None:
+    assert parse_scenario_tool_request(
+        '{"tool": "run_rule_scenario", "arguments": {"updates": {"high_utilization_pct": 88}}}'
+    ) == {
+        "tool": "run_rule_scenario",
+        "arguments": {"updates": {"high_utilization_pct": 88}},
+        "issue": "",
+    }
+
+    with pytest.raises(AssistantValidationError):
+        parse_scenario_tool_request('{"tool": "delete_everything", "arguments": {}}')
 
 
 def test_validation_router_retries_then_falls_back() -> None:

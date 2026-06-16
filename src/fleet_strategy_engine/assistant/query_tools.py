@@ -8,6 +8,7 @@ NUMERIC_FILTERS = {
     "utilization_pct",
     "daily_roi",
     "daily_margin",
+    "estimated_daily_profit",
     "price_gap_pct",
     "market_share_pct",
     "recommendation_score",
@@ -21,6 +22,7 @@ QUERY_COLUMNS = [
     "utilization_pct",
     "daily_margin",
     "daily_roi",
+    "estimated_daily_profit",
     "price_gap_pct",
     "market_share_pct",
     "recommendation",
@@ -51,6 +53,7 @@ def compact_summary(df: pd.DataFrame) -> dict[str, Any]:
         else 0,
         "avg_utilization_pct": safe_mean(df, "utilization_pct"),
         "avg_daily_roi": safe_mean(df, "daily_roi"),
+        "total_estimated_daily_profit": safe_sum(df, "estimated_daily_profit"),
         "avg_market_share_pct": safe_mean(df, "market_share_pct"),
     }
 
@@ -59,6 +62,12 @@ def safe_mean(df: pd.DataFrame, column: str) -> float:
     if column not in df or df.empty:
         return 0.0
     return round(float(df[column].mean()), 4)
+
+
+def safe_sum(df: pd.DataFrame, column: str) -> float:
+    if column not in df or df.empty:
+        return 0.0
+    return round(float(df[column].sum()), 2)
 
 
 def available_values(df: pd.DataFrame) -> dict[str, list[str]]:

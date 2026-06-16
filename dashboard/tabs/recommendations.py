@@ -10,6 +10,7 @@ def render_table(df: pd.DataFrame) -> None:
         "fleet_size",
         "utilization_pct",
         "daily_roi",
+        "estimated_daily_profit",
         "daily_margin",
         "price_gap_pct",
         "market_share_pct",
@@ -26,6 +27,10 @@ def render_table(df: pd.DataFrame) -> None:
         hide_index=True,
         column_config={
             "daily_roi": st.column_config.NumberColumn("daily_roi", format="percent"),
+            "estimated_daily_profit": st.column_config.NumberColumn(
+                "estimated_daily_profit",
+                format="$%.2f",
+            ),
             "daily_margin": st.column_config.NumberColumn("daily_margin", format="$%.2f"),
             "price_gap_pct": st.column_config.NumberColumn("price_gap_pct", format="%.1f%%"),
             "utilization_pct": st.column_config.NumberColumn("utilization_pct", format="%.1f%%"),
@@ -42,4 +47,3 @@ def render_table(df: pd.DataFrame) -> None:
             ),
         },
     )
-

@@ -1,11 +1,13 @@
 import pandas as pd
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from fleet_strategy_engine.assistant import (
     AssistantValidationError,
     build_assistant_context,
     deterministic_fallback,
     fragile_query_tool_request,
+    history_to_messages,
     parse_validation_result,
     parse_query_tool_request,
     parse_scenario_tool_request,
@@ -22,6 +24,7 @@ def recommendation_row(**overrides):
         "utilization_pct": 92.0,
         "daily_margin": 65.0,
         "daily_roi": 1.1818,
+        "estimated_daily_profit": 2830.0,
         "price_gap_pct": -4.0,
         "market_share_pct": 16.0,
         "recommendation": "BUY",
@@ -77,6 +80,19 @@ def test_parse_validation_result_requires_boolean_valid_flag() -> None:
         parse_validation_result("not json")
 
 
+def test_history_to_messages_preserves_assistant_context_for_followups() -> None:
+    messages = history_to_messages(
+        [
+            {"role": "user", "content": "Find negative daily profit rows"},
+            {"role": "assistant", "content": "SEA / Premium and IAD / Premium are negative."},
+        ]
+    )
+
+    assert isinstance(messages[0], HumanMessage)
+    assert isinstance(messages[1], AIMessage)
+    assert "SEA / Premium" in str(messages[1].content)
+
+
 def test_parse_query_tool_request_requires_supported_tool() -> None:
     assert parse_query_tool_request(
         '{"tool": "query_opportunities", "arguments": {"filters": {"region": "West"}}}'
@@ -95,6 +111,16 @@ def test_parse_query_tool_request_requires_supported_tool() -> None:
 
     with pytest.raises(AssistantValidationError):
         parse_query_tool_request('{"tool": "unsupported", "arguments": {}}')
+
+
+def test_parse_query_tool_request_accepts_prose_wrapped_json() -> None:
+    assert parse_query_tool_request(
+        'Use this:\n{"tool": "query_opportunities", "arguments": {"filters": {"station": "ATL", "segment": ["Economy", "SUV"]}}}'
+    ) == {
+        "tool": "query_opportunities",
+        "arguments": {"filters": {"station": "ATL", "segment": ["Economy", "SUV"]}},
+        "issue": "",
+    }
 
 
 def test_parse_scenario_tool_request_requires_supported_tool() -> None:

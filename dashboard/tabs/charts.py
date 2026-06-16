@@ -24,6 +24,18 @@ def action_ranking_frame(df: pd.DataFrame, action: str, limit: int = 12) -> pd.D
     return ranked.head(limit)
 
 
+def profitability_ranking_frame(df: pd.DataFrame, limit: int = 12) -> pd.DataFrame:
+    ranked = df.copy()
+    if ranked.empty:
+        return ranked
+
+    ranked["station_segment"] = ranked["station"] + " / " + ranked["segment"]
+    return ranked.sort_values(
+        ["estimated_daily_profit", "recommended_fleet_delta", "utilization_pct"],
+        ascending=[True, True, True],
+    ).head(limit)
+
+
 def render_charts(df: pd.DataFrame) -> None:
     left, right = st.columns(2)
 
@@ -148,6 +160,47 @@ def render_charts(df: pd.DataFrame) -> None:
         yaxis_title="",
     )
     st.plotly_chart(delta_fig, use_container_width=True)
+
+    profitability_ranking = profitability_ranking_frame(df)
+    if profitability_ranking.empty:
+        st.info("No profitability opportunities match the current filters.")
+    else:
+        profitability_fig = px.bar(
+            profitability_ranking,
+            x="estimated_daily_profit",
+            y="station_segment",
+            orientation="h",
+            color="recommendation_score",
+            color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
+            range_color=[-1, 1],
+            hover_data=[
+                "station",
+                "region",
+                "segment",
+                "recommendation",
+                "confidence",
+                "fleet_size",
+                "utilization_pct",
+                "daily_roi",
+                "recommended_fleet_delta",
+                "reason_codes",
+            ],
+            labels={
+                "station_segment": "Station / Segment",
+                "estimated_daily_profit": "Estimated Daily Profit",
+                "recommendation_score": "Recommendation Signal",
+            },
+        )
+        profitability_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
+        profitability_fig.update_layout(
+            title="Lowest Profitability Opportunities",
+            yaxis={
+                "categoryorder": "array",
+                "categoryarray": profitability_ranking["station_segment"].iloc[::-1].tolist(),
+                "title": "",
+            },
+        )
+        st.plotly_chart(profitability_fig, use_container_width=True)
 
     st.subheader("Decision Driver Scatter Views")
 
@@ -326,4 +379,3 @@ def render_charts(df: pd.DataFrame) -> None:
     market_price_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
     market_price_fig.update_layout(title="Market Share vs Price Gap")
     st.plotly_chart(market_price_fig, use_container_width=True)
-

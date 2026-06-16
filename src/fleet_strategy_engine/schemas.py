@@ -39,6 +39,7 @@ OUTPUT_COLUMNS = [
     "price_gap",
     "price_gap_pct",
     "estimated_rented_cars",
+    "estimated_daily_profit",
     "target_fleet_at_85_util",
     "recommended_fleet_delta",
     "utilization_band",

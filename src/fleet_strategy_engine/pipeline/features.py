@@ -91,6 +91,11 @@ def add_features(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.
     featured["estimated_rented_cars"] = (
         featured["fleet_size"] * featured["utilization_pct"] / 100
     )
+    featured["estimated_daily_profit"] = (
+        featured["avg_daily_rate"] * featured["estimated_rented_cars"]
+        - featured["avg_daily_fleet_cost"] * featured["fleet_size"]
+        - featured["avg_daily_operating_cost"] * featured["estimated_rented_cars"]
+    )
     featured["target_fleet_at_85_util"] = featured["estimated_rented_cars"].apply(
         lambda value: int(math.ceil(value / config.target_utilization))
     )

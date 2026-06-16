@@ -13,13 +13,14 @@ def recommendations() -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "station": "JFK",
-                "region": "Northeast",
+                "station": "ATL",
+                "region": "South",
                 "segment": "SUV",
                 "fleet_size": 50,
                 "utilization_pct": 92.0,
                 "daily_margin": 65.0,
                 "daily_roi": 1.1818,
+                "estimated_daily_profit": 2830.0,
                 "price_gap_pct": -4.0,
                 "market_share_pct": 16.0,
                 "recommendation": "BUY",
@@ -38,6 +39,7 @@ def recommendations() -> pd.DataFrame:
                 "utilization_pct": 68.0,
                 "daily_margin": 8.0,
                 "daily_roi": 0.2162,
+                "estimated_daily_profit": -240.0,
                 "price_gap_pct": -10.0,
                 "market_share_pct": 7.0,
                 "recommendation": "REDUCE",
@@ -56,6 +58,7 @@ def recommendations() -> pd.DataFrame:
                 "utilization_pct": 89.0,
                 "daily_margin": 45.0,
                 "daily_roi": 0.75,
+                "estimated_daily_profit": 1602.0,
                 "price_gap_pct": 6.0,
                 "market_share_pct": 14.0,
                 "recommendation": "BUY",
@@ -71,10 +74,10 @@ def recommendations() -> pd.DataFrame:
 
 
 def test_lookup_opportunity_returns_exact_station_segment() -> None:
-    result = lookup_opportunity(recommendations(), "jfk", "suv")
+    result = lookup_opportunity(recommendations(), "atl", "suv")
 
     assert result["matched_row_count"] == 1
-    assert result["rows"][0]["station"] == "JFK"
+    assert result["rows"][0]["station"] == "ATL"
     assert result["rows"][0]["segment"] == "SUV"
 
 
@@ -92,6 +95,19 @@ def test_query_opportunities_filters_and_sorts() -> None:
     assert result["rows"][0]["station"] == "LAX"
 
 
+def test_query_opportunities_supports_station_segment_comparison() -> None:
+    result = query_opportunities(
+        recommendations(),
+        filters={"station": "ATL", "segment": ["Economy", "SUV"]},
+        sort_by="segment",
+        sort_direction="asc",
+    )
+
+    assert result["matched_row_count"] == 1
+    assert result["rows"][0]["station"] == "ATL"
+    assert result["rows"][0]["segment"] == "SUV"
+
+
 def test_query_opportunities_supports_numeric_ranges() -> None:
     result = query_opportunities(
         recommendations(),
@@ -99,7 +115,7 @@ def test_query_opportunities_supports_numeric_ranges() -> None:
     )
 
     assert result["matched_row_count"] == 1
-    assert result["rows"][0]["station"] == "JFK"
+    assert result["rows"][0]["station"] == "ATL"
 
 
 def test_query_opportunities_rejects_unknown_filters() -> None:

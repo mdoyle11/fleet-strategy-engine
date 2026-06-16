@@ -85,6 +85,7 @@ COMPARISON_COLUMNS = [
     "market_share_pct",
     "daily_margin",
     "daily_roi",
+    "estimated_daily_profit",
     "price_gap_pct",
     "recommendation",
     "recommendation_score",

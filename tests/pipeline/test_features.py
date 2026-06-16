@@ -36,6 +36,7 @@ def test_add_features_calculates_core_metrics() -> None:
     assert result.loc[0, "price_gap"] == -5
     assert result.loc[0, "price_gap_pct"] == -4
     assert result.loc[0, "estimated_rented_cars"] == 46
+    assert result.loc[0, "estimated_daily_profit"] == 2830
     assert result.loc[0, "target_fleet_at_85_util"] == 55
     assert result.loc[0, "region"] == "Northeast"
 

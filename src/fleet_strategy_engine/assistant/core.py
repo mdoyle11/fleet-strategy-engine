@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from fleet_strategy_engine.assistant.scenario_tools import ScenarioToolError, run_scenario_tool
@@ -73,8 +73,16 @@ Shape:
 {"tool": "none", "arguments": {}, "issue": ""}
 
 Only use text/numeric fields listed in the provided context. Use exact available
-values where possible. If the user asks for the "top" or "highest" rows, include
-an appropriate sort_by and limit.
+values where possible. For comparisons between segments at one station, use
+query_opportunities with a station filter and a segment list, for example
+{"filters": {"station": "ATL", "segment": ["Economy", "SUV"]}}.
+For follow-up questions that refer to rows "you just mentioned" or "those cases",
+use the recent conversation to infer the deterministic filter or row set. Prefer
+metric filters such as {"estimated_daily_profit": {"max": 0}} or
+{"daily_roi": {"max": 0}} when the prior answer was based on that condition.
+If the user asks for the "top" or "highest" rows, include an appropriate sort_by
+and limit. If the user asks for the "lowest", "least", "most unprofitable", or
+"worst profitability" rows, sort by estimated_daily_profit ascending.
 """
 
 VALIDATOR_SYSTEM_PROMPT = """
@@ -218,6 +226,7 @@ def build_assistant_context(df: pd.DataFrame) -> dict[str, Any]:
         "utilization_pct",
         "daily_margin",
         "daily_roi",
+        "estimated_daily_profit",
         "price_gap_pct",
         "market_share_pct",
         "recommendation",
@@ -238,6 +247,9 @@ def build_assistant_context(df: pd.DataFrame) -> dict[str, Any]:
             "avg_utilization_pct": round(float(df["utilization_pct"].mean()), 2),
             "avg_daily_margin": round(float(df["daily_margin"].mean()), 2),
             "avg_daily_roi": round(float(df["daily_roi"].mean()), 4),
+            "total_estimated_daily_profit": round(
+                float(df["estimated_daily_profit"].sum()), 2
+            ),
             "avg_market_share_pct": round(float(df["market_share_pct"].mean()), 2),
         },
         "reason_code_reference": load_reason_code_reference(),
@@ -307,10 +319,7 @@ def parse_validation_result(raw_result: str) -> dict[str, Any]:
 
 
 def parse_query_tool_request(raw_result: str) -> dict[str, Any]:
-    cleaned = raw_result.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        cleaned = cleaned.removeprefix("json").strip()
+    cleaned = extract_json_object(raw_result)
 
     try:
         result = json.loads(cleaned)
@@ -328,6 +337,19 @@ def parse_query_tool_request(raw_result: str) -> dict[str, Any]:
         "arguments": arguments,
         "issue": str(result.get("issue", "")),
     }
+
+
+def extract_json_object(raw_result: str) -> str:
+    cleaned = raw_result.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        cleaned = cleaned.removeprefix("json").strip()
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return cleaned
+    return cleaned[start : end + 1]
 
 
 def parse_scenario_tool_request(raw_result: str) -> dict[str, Any]:
@@ -452,6 +474,8 @@ def history_to_messages(chat_history: list[dict[str, str]]) -> list[BaseMessage]
     for message in chat_history[-8:]:
         if message["role"] == "user":
             messages.append(HumanMessage(content=message["content"]))
+        elif message["role"] == "assistant":
+            messages.append(AIMessage(content=message["content"]))
     return messages
 
 

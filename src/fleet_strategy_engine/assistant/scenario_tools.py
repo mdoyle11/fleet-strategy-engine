@@ -375,6 +375,7 @@ def compact_row(row: pd.Series) -> dict[str, Any]:
         "market_share_pct": round(float(row["market_share_pct"]), 2),
         "daily_margin": round(float(row["daily_margin"]), 2),
         "daily_roi": round(float(row["daily_roi"]), 4),
+        "estimated_daily_profit": round(float(row["estimated_daily_profit"]), 2),
         "price_gap_pct": round(float(row["price_gap_pct"]), 2),
         "recommendation": row["recommendation"],
         "recommendation_score": round(float(row["recommendation_score"]), 2),

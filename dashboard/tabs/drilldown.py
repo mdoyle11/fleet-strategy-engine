@@ -31,13 +31,13 @@ def render_drilldown(df: pd.DataFrame) -> None:
     top[3].metric("Delta", f"{int(row['recommended_fleet_delta']):+}")
     top[4].metric("Utilization", f"{row['utilization_pct']:.1f}%")
 
-    bottom = st.columns(5)
+    bottom = st.columns(6)
     bottom[0].metric("Daily ROI", f"{row['daily_roi']:.1%}")
-    bottom[1].metric("Price Gap", f"{row['price_gap_pct']:.1f}%")
-    bottom[2].metric("Market Share", f"{row['market_share_pct']:.1f}%")
-    bottom[3].metric("Target Fleet", f"{int(row['target_fleet_at_85_util']):,}")
-    bottom[4].metric("Region", row["region"])
+    bottom[1].metric("Est. Daily Profit", f"${row['estimated_daily_profit']:,.0f}")
+    bottom[2].metric("Price Gap", f"{row['price_gap_pct']:.1f}%")
+    bottom[3].metric("Market Share", f"{row['market_share_pct']:.1f}%")
+    bottom[4].metric("Target Fleet", f"{int(row['target_fleet_at_85_util']):,}")
+    bottom[5].metric("Region", row["region"])
 
     st.write(row["reasoning"])
-
 

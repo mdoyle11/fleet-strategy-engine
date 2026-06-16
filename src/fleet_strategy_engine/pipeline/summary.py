@@ -18,6 +18,7 @@ def build_summary(df: pd.DataFrame) -> dict[str, Any]:
         "avg_utilization_pct": round(float(df["utilization_pct"].mean()), 2),
         "avg_daily_margin": round(float(df["daily_margin"].mean()), 2),
         "avg_daily_roi": round(float(df["daily_roi"].mean()), 4),
+        "total_estimated_daily_profit": round(float(df["estimated_daily_profit"].sum()), 2),
         "high_risk_count": int(
             ((df["recommendation"] == "REDUCE") | (df["daily_roi"] <= 0)).sum()
         ),

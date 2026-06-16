@@ -6,6 +6,7 @@ from typing_extensions import TypedDict
 
 from fleet_strategy_engine.assistant.core import (
     ANSWER_SYSTEM_PROMPT,
+    AssistantValidationError,
     MAX_REPAIR_ATTEMPTS,
     QUERY_TOOL_SYSTEM_PROMPT,
     REPAIR_SYSTEM_PROMPT,
@@ -38,14 +39,22 @@ class AssistantState(TypedDict):
 
 
 def plan_query_node(state: AssistantState) -> dict[str, Any]:
-    question = latest_question(state["messages"])
     response = llm().invoke(
         [
             system_with_context(QUERY_TOOL_SYSTEM_PROMPT, planning_context(state["source_df"])),
-            HumanMessage(content=question),
+            *state["messages"][-6:],
         ]
     )
-    return {"query_request": parse_query_tool_request(text_from_response(response))}
+    try:
+        return {"query_request": parse_query_tool_request(text_from_response(response))}
+    except AssistantValidationError as exc:
+        return {
+            "query_request": {
+                "tool": "none",
+                "arguments": {},
+                "issue": str(exc),
+            }
+        }
 
 
 def execute_query_node(state: AssistantState) -> dict[str, Any]:
@@ -75,10 +84,11 @@ def execute_query_node(state: AssistantState) -> dict[str, Any]:
 
 
 def generate_answer_node(state: AssistantState) -> dict[str, Any]:
+    question = latest_question(state["messages"])
     response = llm().invoke(
         [
             system_with_context(ANSWER_SYSTEM_PROMPT, state["context"]),
-            *state["messages"][-8:],
+            HumanMessage(content=question),
         ]
     )
     return {"answer": text_from_response(response)}

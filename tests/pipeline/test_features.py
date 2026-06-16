@@ -2,9 +2,10 @@ import pandas as pd
 
 from fleet_strategy_engine.pipeline.features import (
     add_features,
-    margin_band,
+    daily_roi,
     market_share_signal,
     pricing_signal,
+    roi_band,
     station_region,
     utilization_band,
 )
@@ -30,6 +31,8 @@ def test_add_features_calculates_core_metrics() -> None:
     result = add_features(df)
 
     assert result.loc[0, "daily_margin"] == 65
+    assert result.loc[0, "daily_cost"] == 55
+    assert round(result.loc[0, "daily_roi"], 4) == 1.1818
     assert result.loc[0, "price_gap"] == -5
     assert result.loc[0, "price_gap_pct"] == -4
     assert result.loc[0, "estimated_rented_cars"] == 46
@@ -51,10 +54,12 @@ def test_band_helpers() -> None:
     assert utilization_band(84) == "target_range"
     assert utilization_band(91) == "capacity_constrained"
 
-    assert margin_band(-1) == "negative_or_zero_margin"
-    assert margin_band(10) == "thin_margin"
-    assert margin_band(25) == "healthy_margin"
-    assert margin_band(50) == "strong_margin"
+    assert daily_roi(65, 55) == 65 / 55
+    assert daily_roi(65, 0) == 0
+    assert roi_band(-0.1) == "negative_or_zero_roi"
+    assert roi_band(0.1) == "thin_roi"
+    assert roi_band(0.5) == "healthy_roi"
+    assert roi_band(0.8) == "strong_roi"
 
 
 def test_signal_helpers() -> None:

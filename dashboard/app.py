@@ -235,7 +235,7 @@ def apply_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 def render_summary(filtered_df: pd.DataFrame) -> None:
     counts = filtered_counts(filtered_df)
-    avg_margin = filtered_df["daily_margin"].mean() if not filtered_df.empty else 0
+    avg_roi = filtered_df["daily_roi"].mean() if not filtered_df.empty else 0
     avg_utilization = filtered_df["utilization_pct"].mean() if not filtered_df.empty else 0
     avg_market_share = filtered_df["market_share_pct"].mean() if not filtered_df.empty else 0
 
@@ -243,7 +243,7 @@ def render_summary(filtered_df: pd.DataFrame) -> None:
     row1[0].metric("Visible Rows", f"{len(filtered_df):,}")
     row1[1].metric("Stations", f"{filtered_df['station'].nunique():,}")
     row1[2].metric("Segments", f"{filtered_df['segment'].nunique():,}")
-    row1[3].metric("Avg Margin", f"${avg_margin:,.2f}")
+    row1[3].metric("Avg ROI", f"{avg_roi:.1%}")
 
     row2 = st.columns(5)
     with row2[0]:
@@ -308,7 +308,7 @@ def render_charts(df: pd.DataFrame) -> None:
                     "region",
                     "segment",
                     "utilization_pct",
-                    "daily_margin",
+                    "daily_roi",
                     "market_share_pct",
                     "price_gap_pct",
                     "confidence",
@@ -422,6 +422,7 @@ def render_charts(df: pd.DataFrame) -> None:
             "recommendation",
             "confidence",
             "daily_margin",
+            "daily_roi",
             "market_share_pct",
             "recommended_fleet_delta",
             "pricing_signal",
@@ -454,7 +455,7 @@ def render_charts(df: pd.DataFrame) -> None:
             "segment",
             "recommendation",
             "confidence",
-            "daily_margin",
+            "daily_roi",
             "price_gap_pct",
             "recommended_fleet_delta",
             "pricing_signal",
@@ -474,11 +475,11 @@ def render_charts(df: pd.DataFrame) -> None:
     market_position_fig.update_layout(title="Market Share vs Utilization")
     st.plotly_chart(market_position_fig, use_container_width=True)
 
-    # Utilization vs Daily Margin
-    margin_util_fig = px.scatter(
+    # Utilization vs Daily ROI
+    roi_util_fig = px.scatter(
         df,
         x="utilization_pct",
-        y="daily_margin",
+        y="daily_roi",
         color="recommendation_score",
         color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
         range_color=[-1, 1],
@@ -496,18 +497,91 @@ def render_charts(df: pd.DataFrame) -> None:
         ],
         labels={
             "utilization_pct": "Utilization %",
-            "daily_margin": "Daily Margin",
+            "daily_roi": "Daily ROI",
             "recommendation_score": "Recommendation Signal",
             "price_gap_pct": "Price Gap vs Competitor %",
         },
     )
-    margin_util_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
-    margin_util_fig.add_vline(x=90, line_dash="dash", line_color="#94a3b8")
-    margin_util_fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
-    margin_util_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
-    margin_util_fig.add_hline(y=40, line_dash="dash", line_color="#94a3b8")
-    margin_util_fig.update_layout(title="Margin vs Utilization")
-    st.plotly_chart(margin_util_fig, use_container_width=True)
+    roi_util_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_vline(x=90, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_hline(y=0.25, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_hline(y=0.75, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.update_layout(title="ROI vs Utilization")
+    st.plotly_chart(roi_util_fig, use_container_width=True)
+
+    # ROI vs Price Gap
+    roi_price_fig = px.scatter(
+        df,
+        x="price_gap_pct",
+        y="daily_roi",
+        color="recommendation_score",
+        color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
+        range_color=[-1, 1],
+        hover_data=[
+            "station",
+            "region",
+            "segment",
+            "recommendation",
+            "confidence",
+            "utilization_pct",
+            "market_share_pct",
+            "pricing_signal",
+            "recommended_fleet_delta",
+            "reason_codes",
+        ],
+        labels={
+            "price_gap_pct": "Price Gap vs Competitor %",
+            "daily_roi": "Daily ROI",
+            "recommendation_score": "Recommendation Signal",
+            "utilization_pct": "Utilization %",
+            "market_share_pct": "Market Share %",
+        },
+    )
+    roi_price_fig.add_vline(x=-10, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
+    roi_price_fig.add_vline(x=10, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.add_hline(y=0.25, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.add_hline(y=0.75, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.update_layout(title="ROI vs Price Gap")
+    st.plotly_chart(roi_price_fig, use_container_width=True)
+
+    # Market Share vs Price Gap
+    market_price_fig = px.scatter(
+        df,
+        x="price_gap_pct",
+        y="market_share_pct",
+        color="recommendation_score",
+        color_continuous_scale=["#dc2626", "#94a3b8", "#1f9d55"],
+        range_color=[-1, 1],
+        hover_data=[
+            "station",
+            "region",
+            "segment",
+            "recommendation",
+            "confidence",
+            "utilization_pct",
+            "daily_roi",
+            "pricing_signal",
+            "recommended_fleet_delta",
+            "reason_codes",
+        ],
+        labels={
+            "price_gap_pct": "Price Gap vs Competitor %",
+            "market_share_pct": "Market Share %",
+            "recommendation_score": "Recommendation Signal",
+            "utilization_pct": "Utilization %",
+            "daily_roi": "Daily ROI",
+        },
+    )
+    market_price_fig.add_vline(x=-10, line_dash="dash", line_color="#94a3b8")
+    market_price_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
+    market_price_fig.add_vline(x=10, line_dash="dash", line_color="#94a3b8")
+    market_price_fig.add_hline(y=9, line_dash="dash", line_color="#94a3b8")
+    market_price_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
+    market_price_fig.update_layout(title="Market Share vs Price Gap")
+    st.plotly_chart(market_price_fig, use_container_width=True)
 
 def render_table(df: pd.DataFrame) -> None:
     columns = [
@@ -516,6 +590,7 @@ def render_table(df: pd.DataFrame) -> None:
         "segment",
         "fleet_size",
         "utilization_pct",
+        "daily_roi",
         "daily_margin",
         "price_gap_pct",
         "market_share_pct",
@@ -531,6 +606,7 @@ def render_table(df: pd.DataFrame) -> None:
         width="stretch",
         hide_index=True,
         column_config={
+            "daily_roi": st.column_config.NumberColumn("daily_roi", format="percent"),
             "daily_margin": st.column_config.NumberColumn("daily_margin", format="$%.2f"),
             "price_gap_pct": st.column_config.NumberColumn("price_gap_pct", format="%.1f%%"),
             "utilization_pct": st.column_config.NumberColumn("utilization_pct", format="%.1f%%"),
@@ -571,7 +647,7 @@ def render_drilldown(df: pd.DataFrame) -> None:
     top[4].metric("Utilization", f"{row['utilization_pct']:.1f}%")
 
     bottom = st.columns(5)
-    bottom[0].metric("Daily Margin", f"${row['daily_margin']:.2f}")
+    bottom[0].metric("Daily ROI", f"{row['daily_roi']:.1%}")
     bottom[1].metric("Price Gap", f"{row['price_gap_pct']:.1f}%")
     bottom[2].metric("Market Share", f"{row['market_share_pct']:.1f}%")
     bottom[3].metric("Target Fleet", f"{int(row['target_fleet_at_85_util']):,}")

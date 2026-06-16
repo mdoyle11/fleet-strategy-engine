@@ -95,6 +95,7 @@ def build_assistant_context(df: pd.DataFrame) -> dict[str, Any]:
         "fleet_size",
         "utilization_pct",
         "daily_margin",
+        "daily_roi",
         "price_gap_pct",
         "market_share_pct",
         "recommendation",
@@ -114,6 +115,7 @@ def build_assistant_context(df: pd.DataFrame) -> dict[str, Any]:
             "net_recommended_fleet_delta": int(df["recommended_fleet_delta"].sum()),
             "avg_utilization_pct": round(float(df["utilization_pct"].mean()), 2),
             "avg_daily_margin": round(float(df["daily_margin"].mean()), 2),
+            "avg_daily_roi": round(float(df["daily_roi"].mean()), 4),
             "avg_market_share_pct": round(float(df["market_share_pct"].mean()), 2),
         },
         "reason_code_reference": load_reason_code_reference(),
@@ -224,7 +226,7 @@ def deterministic_fallback(context: dict[str, Any], validation_issue: str) -> st
         f"Visible rows: {summary['visible_rows']}\n"
         f"BUY / HOLD / REDUCE counts: {counts['BUY']} / {counts['HOLD']} / {counts['REDUCE']}\n"
         f"Average utilization: {summary['avg_utilization_pct']:.1f}%\n"
-        f"Average daily margin: ${summary['avg_daily_margin']:.2f}\n"
+        f"Average daily ROI: {summary['avg_daily_roi']:.1%}\n"
         f"Average market share: {summary['avg_market_share_pct']:.1f}%\n"
         f"Net recommended fleet delta: {summary['net_recommended_fleet_delta']:+}\n\n"
         "Top BUY rows by recommendation score:\n"

@@ -17,9 +17,9 @@ def build_summary(df: pd.DataFrame) -> dict[str, Any]:
         "net_recommended_fleet_delta": int(df["recommended_fleet_delta"].sum()),
         "avg_utilization_pct": round(float(df["utilization_pct"].mean()), 2),
         "avg_daily_margin": round(float(df["daily_margin"].mean()), 2),
+        "avg_daily_roi": round(float(df["daily_roi"].mean()), 4),
         "high_risk_count": int(
-            ((df["recommendation"] == "REDUCE") | (df["daily_margin"] <= 0)).sum()
+            ((df["recommendation"] == "REDUCE") | (df["daily_roi"] <= 0)).sum()
         ),
         "generated_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-

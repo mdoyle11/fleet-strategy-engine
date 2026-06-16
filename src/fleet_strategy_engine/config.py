@@ -10,7 +10,8 @@ class EngineConfig:
     strong_market_share_pct: float = 15.0
     underutilized_pct: float = 75.0
     high_utilization_pct: float = 90.0
+    thin_roi_threshold: float = 0.25
+    strong_roi_threshold: float = 0.75
 
 
 DEFAULT_CONFIG = EngineConfig()
-

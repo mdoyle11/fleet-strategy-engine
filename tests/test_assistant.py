@@ -18,6 +18,7 @@ def recommendation_row(**overrides):
         "fleet_size": 50,
         "utilization_pct": 92.0,
         "daily_margin": 65.0,
+        "daily_roi": 1.1818,
         "price_gap_pct": -4.0,
         "market_share_pct": 16.0,
         "recommendation": "BUY",
@@ -26,7 +27,7 @@ def recommendation_row(**overrides):
         "recommended_fleet_delta": 4,
         "pricing_signal": "near_competitor_price",
         "reason_codes": "utilization_above_90|strong_margin",
-        "reasoning": "BUY because utilization and margin are strong.",
+        "reasoning": "BUY because utilization and ROI are strong.",
     }
     row.update(overrides)
     return row

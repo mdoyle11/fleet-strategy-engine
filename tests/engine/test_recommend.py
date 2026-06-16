@@ -21,7 +21,7 @@ def score_input(**overrides):
     return add_recommendations(df).iloc[0]
 
 
-def test_high_utilization_positive_margin_recommends_buy() -> None:
+def test_high_utilization_positive_roi_recommends_buy() -> None:
     row = score_input(utilization_pct=94, market_share_pct=16)
 
     assert row["recommendation"] == "BUY"
@@ -45,7 +45,7 @@ def test_target_range_balanced_signals_recommends_hold() -> None:
     assert row["recommended_fleet_delta"] == 0
 
 
-def test_non_positive_margin_blocks_buy() -> None:
+def test_non_positive_roi_blocks_buy() -> None:
     row = score_input(
         utilization_pct=95,
         avg_daily_rate=50,

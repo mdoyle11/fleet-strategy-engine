@@ -79,6 +79,13 @@ def add_features(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.
         - featured["avg_daily_fleet_cost"]
         - featured["avg_daily_operating_cost"]
     )
+    featured["daily_cost"] = (
+        featured["avg_daily_fleet_cost"] + featured["avg_daily_operating_cost"]
+    )
+    featured["daily_roi"] = featured.apply(
+        lambda row: daily_roi(row["daily_margin"], row["daily_cost"]),
+        axis=1,
+    )
     featured["price_gap"] = featured["avg_daily_rate"] - featured["competitor_rate"]
     featured["price_gap_pct"] = featured["price_gap"] / featured["competitor_rate"] * 100
     featured["estimated_rented_cars"] = (
@@ -88,7 +95,7 @@ def add_features(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.
         lambda value: int(math.ceil(value / config.target_utilization))
     )
     featured["utilization_band"] = featured["utilization_pct"].apply(utilization_band)
-    featured["margin_band"] = featured["daily_margin"].apply(margin_band)
+    featured["roi_band"] = featured["daily_roi"].apply(lambda value: roi_band(value, config))
     featured["pricing_signal"] = featured.apply(
         lambda row: pricing_signal(row["price_gap_pct"], row["utilization_pct"]),
         axis=1,
@@ -118,14 +125,20 @@ def utilization_band(utilization_pct: float) -> str:
     return "capacity_constrained"
 
 
-def margin_band(daily_margin: float) -> str:
-    if daily_margin <= 0:
-        return "negative_or_zero_margin"
-    if daily_margin < 15:
-        return "thin_margin"
-    if daily_margin < 40:
-        return "healthy_margin"
-    return "strong_margin"
+def daily_roi(daily_margin: float, daily_cost: float) -> float:
+    if daily_cost <= 0:
+        return 0.0
+    return daily_margin / daily_cost
+
+
+def roi_band(daily_roi_value: float, config: EngineConfig = DEFAULT_CONFIG) -> str:
+    if daily_roi_value <= 0:
+        return "negative_or_zero_roi"
+    if daily_roi_value < config.thin_roi_threshold:
+        return "thin_roi"
+    if daily_roi_value < config.strong_roi_threshold:
+        return "healthy_roi"
+    return "strong_roi"
 
 
 def pricing_signal(price_gap_pct: float, utilization_pct: float) -> str:

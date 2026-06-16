@@ -28,7 +28,7 @@ def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str
     reason_codes: list[str] = []
 
     util = float(row["utilization_pct"])
-    margin = float(row["daily_margin"])
+    roi = float(row["daily_roi"])
     share = float(row["market_share_pct"])
     price_gap_pct = float(row["price_gap_pct"])
 
@@ -49,13 +49,13 @@ def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str
     else:
         reason_codes.append("utilization_near_target")
 
-    if margin <= 0:
+    if roi <= 0:
         signal_points -= 3
         reason_codes.append("non_positive_margin")
-    elif margin < 15:
+    elif roi < config.thin_roi_threshold:
         signal_points -= 1
         reason_codes.append("thin_margin")
-    elif margin >= 40:
+    elif roi >= config.strong_roi_threshold:
         signal_points += 1
         reason_codes.append("strong_margin")
     else:
@@ -89,7 +89,7 @@ def score_row(row: pd.Series, config: EngineConfig = DEFAULT_CONFIG) -> dict[str
         reason_codes.append("pricing_near_competitor")
 
     recommendation_score = clamp(signal_points / 6, -1, 1)
-    if margin <= 0:
+    if roi <= 0:
         recommendation_score = min(recommendation_score, BUY_SIGNAL_THRESHOLD - 0.01)
 
     if recommendation_score >= BUY_SIGNAL_THRESHOLD:

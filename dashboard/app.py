@@ -1,4 +1,3 @@
-import os
 import sys
 import time
 import uuid
@@ -16,11 +15,13 @@ if stale_assistant_module is not None and not hasattr(stale_assistant_module, "_
 
 from dashboard.common import ensure_region_column
 from dashboard.constants import (
-    ARTIFACT_BASE_URI_ENV,
-    PIPELINE_EXECUTION_MODE_ENV,
-    PIPELINE_WAIT_SECONDS_ENV,
-    RAW_UPLOAD_BASE_URI_ENV,
     SAMPLE_DATA_PATH,
+)
+from dashboard.settings import (
+    artifact_base_uri,
+    pipeline_execution_mode,
+    pipeline_wait_seconds,
+    raw_upload_base_uri,
 )
 from dashboard.shell import apply_filters, render_summary
 from dashboard.tabs.assistant import render_assistant
@@ -34,8 +35,6 @@ from dashboard.tabs.sensitivity import (
 )
 from fleet_strategy_engine.pipeline import (
     INPUT_ARTIFACT,
-    LOCAL_RUNS_URI,
-    artifact_display_uri,
     artifact_uri,
     load_pipeline_outputs,
     pipeline_outputs_exist,
@@ -59,22 +58,6 @@ def load_sample_data() -> pd.DataFrame:
     return pd.read_csv(SAMPLE_DATA_PATH)
 
 
-def artifact_base_uri() -> str:
-    return os.environ.get(ARTIFACT_BASE_URI_ENV, LOCAL_RUNS_URI)
-
-
-def raw_upload_base_uri() -> str:
-    return os.environ.get(RAW_UPLOAD_BASE_URI_ENV, "outputs/raw/uploads")
-
-
-def pipeline_execution_mode() -> str:
-    return os.environ.get(PIPELINE_EXECUTION_MODE_ENV, "inline").lower()
-
-
-def pipeline_wait_seconds() -> int:
-    return int(os.environ.get(PIPELINE_WAIT_SECONDS_ENV, "30"))
-
-
 def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
     run_id = run_id or uuid.uuid4().hex
     run_uri = run_artifact_uri(run_id, artifact_base_uri())
@@ -83,7 +66,7 @@ def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
         raw_run_uri = run_artifact_uri(run_id, raw_upload_base_uri())
         write_input_csv(input_df, raw_run_uri)
         wait_for_pipeline_outputs(run_uri)
-        st.session_state["raw_run_uri"] = artifact_display_uri(raw_run_uri)
+        st.session_state["raw_run_uri"] = str(raw_run_uri)
     else:
         write_input_csv(input_df, run_uri)
         run_recommendation_file_pipeline(
@@ -95,7 +78,7 @@ def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
 
     st.session_state["input_df"] = input_df
     st.session_state["run_id"] = run_id
-    st.session_state["run_uri"] = artifact_display_uri(run_uri)
+    st.session_state["run_uri"] = str(run_uri)
     st.session_state["recommendations"] = artifact_recommendations
     st.session_state["summary"] = artifact_summary
 

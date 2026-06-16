@@ -1,7 +1,9 @@
 import pandas as pd
 import streamlit as st
 
-from dashboard.constants import ACTION_ORDER, STATION_REGION_MAP
+from dashboard.constants import ACTION_ORDER
+from fleet_strategy_engine.geography import station_region
+from fleet_strategy_engine.recommendation_context import recommendation_counts
 
 
 def ensure_region_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -13,14 +15,14 @@ def ensure_region_column(df: pd.DataFrame) -> pd.DataFrame:
     enriched.insert(
         insert_at,
         "region",
-        enriched["station"].apply(lambda station: STATION_REGION_MAP.get(str(station).upper(), "Unknown")),
+        enriched["station"].apply(station_region),
     )
     return enriched
 
 
 def filtered_counts(df: pd.DataFrame) -> dict[str, int]:
-    counts = df["recommendation"].value_counts()
-    return {action: int(counts.get(action, 0)) for action in ACTION_ORDER}
+    counts = recommendation_counts(df)
+    return {action: counts[action] for action in ACTION_ORDER}
 
 
 def render_colored_metric(
@@ -47,5 +49,4 @@ def render_colored_metric(
         """,
         unsafe_allow_html=True,
     )
-
 

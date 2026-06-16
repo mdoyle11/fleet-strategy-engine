@@ -24,14 +24,6 @@ def run_artifact_uri(run_id: str, base_uri: PathLike = LOCAL_RUNS_URI) -> str:
     return str(Path(base) / run_id)
 
 
-def local_run_dir(run_id: str, base_dir: Path = Path(LOCAL_RUNS_URI)) -> Path:
-    return Path(run_artifact_uri(run_id, base_dir))
-
-
-def artifact_display_uri(uri: PathLike) -> str:
-    return str(uri)
-
-
 def artifact_uri(root_uri: PathLike, name: str) -> str:
     root = str(root_uri).rstrip("/")
     if root.startswith("s3://"):
@@ -51,7 +43,7 @@ def write_input_csv(input_df: pd.DataFrame, run_uri: PathLike) -> None:
 def read_input_csv(input_uri: PathLike) -> pd.DataFrame:
     uri = str(input_uri)
     if uri.startswith("s3://"):
-        return pd.read_csv(BytesIO(read_uri_bytes(uri)))
+        return pd.read_csv(BytesIO(S3ArtifactStore.from_uri(uri).read_root_bytes()))
     return pd.read_csv(Path(uri))
 
 
@@ -81,13 +73,6 @@ def load_pipeline_outputs(output_uri: PathLike) -> tuple[pd.DataFrame, dict]:
 def pipeline_outputs_exist(output_uri: PathLike) -> bool:
     store = artifact_store(output_uri)
     return store.exists(RECOMMENDATIONS_ARTIFACT) and store.exists(SUMMARY_ARTIFACT)
-
-
-def read_uri_bytes(uri: str) -> bytes:
-    parsed = urlparse(uri)
-    if parsed.scheme == "s3":
-        return S3ArtifactStore.from_uri(uri).read_root_bytes()
-    return Path(uri).read_bytes()
 
 
 def artifact_store(root_uri: PathLike) -> "ArtifactStore":

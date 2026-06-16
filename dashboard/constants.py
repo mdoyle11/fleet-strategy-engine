@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from fleet_strategy_engine.geography import STATION_REGION_MAP
+
 
 SAMPLE_DATA_PATH = Path("data/sample_data.csv")
 ARTIFACT_BASE_URI_ENV = "FLEET_ARTIFACT_BASE_URI"
@@ -9,58 +11,6 @@ PIPELINE_WAIT_SECONDS_ENV = "FLEET_PIPELINE_WAIT_SECONDS"
 ACTION_ORDER = ["BUY", "HOLD", "REDUCE"]
 REGION_ORDER = ["Northeast", "South", "Midwest", "West", "Unknown"]
 SEGMENT_ORDER = ["Economy", "SUV", "Premium", "Minivan", "Truck"]
-STATION_REGION_MAP = {
-    "ANC": "West",
-    "ATL": "South",
-    "AUS": "South",
-    "BNA": "South",
-    "BOS": "Northeast",
-    "BWI": "South",
-    "CLE": "Midwest",
-    "CLT": "South",
-    "CMH": "Midwest",
-    "DAL": "South",
-    "DEN": "West",
-    "DFW": "South",
-    "DTW": "Midwest",
-    "EWR": "Northeast",
-    "HNL": "West",
-    "HOU": "South",
-    "IAD": "South",
-    "IAH": "South",
-    "IND": "Midwest",
-    "JAX": "South",
-    "JFK": "Northeast",
-    "LAS": "West",
-    "LAX": "West",
-    "LGA": "Northeast",
-    "MCI": "Midwest",
-    "MCO": "South",
-    "MDW": "Midwest",
-    "MEM": "South",
-    "MIA": "South",
-    "MSP": "Midwest",
-    "MSY": "South",
-    "OAK": "West",
-    "OGG": "West",
-    "OKC": "South",
-    "OMA": "Midwest",
-    "ORD": "Midwest",
-    "PDX": "West",
-    "PHL": "Northeast",
-    "PHX": "West",
-    "PIT": "Northeast",
-    "RDU": "South",
-    "SAN": "West",
-    "SAT": "South",
-    "SEA": "West",
-    "SFO": "West",
-    "SJC": "West",
-    "SLC": "West",
-    "SMF": "West",
-    "STL": "Midwest",
-    "TPA": "South",
-}
 ACTION_COLORS = {
     "BUY": "#1f9d55",
     "HOLD": "#64748b",

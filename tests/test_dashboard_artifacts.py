@@ -7,7 +7,6 @@ from fleet_strategy_engine.pipeline import (
     RECOMMENDATIONS_ARTIFACT,
     SUMMARY_ARTIFACT,
     load_pipeline_outputs,
-    local_run_dir,
     pipeline_outputs_exist,
     run_artifact_uri,
     run_recommendation_file_pipeline,
@@ -30,7 +29,7 @@ def test_local_run_artifacts_round_trip(tmp_path: Path) -> None:
     )
     summary = {"row_count": 1, "recommendation_counts": {"BUY": 1}}
 
-    run_dir = local_run_dir("test-run", tmp_path)
+    run_dir = tmp_path / "test-run"
     write_pipeline_outputs(
         recommendations,
         summary,
@@ -65,7 +64,7 @@ def test_s3_artifact_store_parses_bucket_and_prefix() -> None:
 
 
 def test_write_input_csv_uses_artifact_backend(tmp_path: Path) -> None:
-    run_dir = local_run_dir("test-input", tmp_path)
+    run_dir = tmp_path / "test-input"
     input_df = pd.DataFrame(
         [
             {

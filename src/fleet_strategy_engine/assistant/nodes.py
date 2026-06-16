@@ -5,12 +5,8 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from fleet_strategy_engine.assistant.core import (
-    ANSWER_SYSTEM_PROMPT,
     AssistantValidationError,
     MAX_REPAIR_ATTEMPTS,
-    QUERY_TOOL_SYSTEM_PROMPT,
-    REPAIR_SYSTEM_PROMPT,
-    VALIDATOR_SYSTEM_PROMPT,
     deterministic_fallback,
     latest_question,
     load_reason_code_reference,
@@ -19,6 +15,12 @@ from fleet_strategy_engine.assistant.core import (
     parse_validation_result,
     system_with_context,
     text_from_response,
+)
+from fleet_strategy_engine.assistant.prompts import (
+    ANSWER_SYSTEM_PROMPT,
+    QUERY_TOOL_SYSTEM_PROMPT,
+    REPAIR_SYSTEM_PROMPT,
+    VALIDATOR_SYSTEM_PROMPT,
 )
 from fleet_strategy_engine.assistant.query_tools import (
     QueryToolError,

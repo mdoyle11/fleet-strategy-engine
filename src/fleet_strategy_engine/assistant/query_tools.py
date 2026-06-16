@@ -2,37 +2,17 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from fleet_strategy_engine.recommendation_context import (
+    ASSISTANT_NUMERIC_FILTERS,
+    ASSISTANT_ROW_COLUMNS,
+    ASSISTANT_TEXT_FILTERS,
+    context_rows,
+    portfolio_summary,
+)
 
-TEXT_FILTERS = {"station", "region", "segment", "recommendation", "confidence"}
-NUMERIC_FILTERS = {
-    "utilization_pct",
-    "daily_roi",
-    "daily_margin",
-    "estimated_daily_profit",
-    "price_gap_pct",
-    "market_share_pct",
-    "recommendation_score",
-    "recommended_fleet_delta",
-}
-QUERY_COLUMNS = [
-    "station",
-    "region",
-    "segment",
-    "fleet_size",
-    "utilization_pct",
-    "daily_margin",
-    "daily_roi",
-    "estimated_daily_profit",
-    "price_gap_pct",
-    "market_share_pct",
-    "recommendation",
-    "recommendation_score",
-    "confidence",
-    "recommended_fleet_delta",
-    "pricing_signal",
-    "reason_codes",
-    "reasoning",
-]
+TEXT_FILTERS = ASSISTANT_TEXT_FILTERS
+NUMERIC_FILTERS = ASSISTANT_NUMERIC_FILTERS
+QUERY_COLUMNS = ASSISTANT_ROW_COLUMNS
 
 
 class QueryToolError(ValueError):
@@ -40,34 +20,7 @@ class QueryToolError(ValueError):
 
 
 def compact_summary(df: pd.DataFrame) -> dict[str, Any]:
-    counts = df["recommendation"].value_counts() if "recommendation" in df else {}
-    return {
-        "visible_rows": int(len(df)),
-        "station_count": int(df["station"].nunique()) if "station" in df else 0,
-        "segment_count": int(df["segment"].nunique()) if "segment" in df else 0,
-        "recommendation_counts": {
-            action: int(counts.get(action, 0)) for action in ("BUY", "HOLD", "REDUCE")
-        },
-        "net_recommended_fleet_delta": int(df["recommended_fleet_delta"].sum())
-        if "recommended_fleet_delta" in df
-        else 0,
-        "avg_utilization_pct": safe_mean(df, "utilization_pct"),
-        "avg_daily_roi": safe_mean(df, "daily_roi"),
-        "total_estimated_daily_profit": safe_sum(df, "estimated_daily_profit"),
-        "avg_market_share_pct": safe_mean(df, "market_share_pct"),
-    }
-
-
-def safe_mean(df: pd.DataFrame, column: str) -> float:
-    if column not in df or df.empty:
-        return 0.0
-    return round(float(df[column].mean()), 4)
-
-
-def safe_sum(df: pd.DataFrame, column: str) -> float:
-    if column not in df or df.empty:
-        return 0.0
-    return round(float(df[column].sum()), 2)
+    return portfolio_summary(df)
 
 
 def available_values(df: pd.DataFrame) -> dict[str, list[str]]:
@@ -156,9 +109,7 @@ def query_opportunities(
         "matched_row_count": int(len(queried)),
         "returned_row_count": int(len(result_rows)),
         "summary": compact_summary(queried),
-        "rows": result_rows[[column for column in QUERY_COLUMNS if column in result_rows]].to_dict(
-            orient="records"
-        ),
+        "rows": context_rows(result_rows, QUERY_COLUMNS),
     }
 
 
@@ -175,9 +126,7 @@ def lookup_opportunity(df: pd.DataFrame, station: str, segment: str) -> dict[str
         "segment": segment,
         "matched_row_count": int(len(matches)),
         "summary": compact_summary(matches),
-        "rows": matches[[column for column in QUERY_COLUMNS if column in matches]].to_dict(
-            orient="records"
-        ),
+        "rows": context_rows(matches, QUERY_COLUMNS),
     }
 
 

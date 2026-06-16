@@ -3,15 +3,23 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard.constants import COMPARISON_COLUMNS, METRIC_LABELS
+from dashboard.formatting import comparison_frame
 from dashboard.tabs.assistant import render_scenario_assistant
 from dashboard.tabs.drilldown import build_row_choices
 from fleet_strategy_engine.assistant.scenario_tools import (
-    add_fragility_columns,
     filtered_counts,
-    run_recommendations,
-    score_margin_to_action_threshold,
 )
 from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
+from fleet_strategy_engine.recommendation_context import reason_code_set
+from fleet_strategy_engine.scenario_analysis import (
+    add_fragility_columns,
+    compare_rule_outputs,
+    find_metric_flip as find_metric_flip_row,
+    metric_bounds,
+    metric_step,
+    rerun_single_row,
+    run_recommendations,
+)
 from fleet_strategy_engine.schemas import REQUIRED_COLUMNS
 
 
@@ -85,51 +93,8 @@ def scenario_config_from_sidebar() -> EngineConfig:
     )
 
 
-def scenario_label(row: pd.Series) -> str:
-    if row["recommendation"] == row["scenario_recommendation"]:
-        return "Stable"
-    return f"{row['recommendation']} -> {row['scenario_recommendation']}"
-
-
 def compare_rule_scenario(baseline: pd.DataFrame, scenario: pd.DataFrame) -> pd.DataFrame:
-    comparison = baseline.merge(
-        scenario[
-            [
-                "station",
-                "segment",
-                "recommendation",
-                "recommendation_score",
-                "confidence",
-                "recommended_fleet_delta",
-                "reason_codes",
-                "reasoning",
-            ]
-        ].rename(
-            columns={
-                "recommendation": "scenario_recommendation",
-                "recommendation_score": "scenario_recommendation_score",
-                "confidence": "scenario_confidence",
-                "recommended_fleet_delta": "scenario_recommended_fleet_delta",
-                "reason_codes": "scenario_reason_codes",
-                "reasoning": "scenario_reasoning",
-            }
-        ),
-        on=["station", "segment"],
-        how="left",
-    )
-    comparison["scenario_change"] = comparison.apply(scenario_label, axis=1)
-    comparison["score_change"] = (
-        comparison["scenario_recommendation_score"] - comparison["recommendation_score"]
-    )
-    comparison["delta_change"] = (
-        comparison["scenario_recommended_fleet_delta"]
-        - comparison["recommended_fleet_delta"]
-    )
-    comparison["absolute_score_change"] = comparison["score_change"].abs()
-    comparison["baseline_score_margin"] = comparison["recommendation_score"].apply(
-        score_margin_to_action_threshold
-    )
-    return comparison
+    return compare_rule_outputs(baseline, scenario, include_reasoning=True)
 
 
 def render_sensitivity_rules(df: pd.DataFrame) -> None:
@@ -292,137 +257,8 @@ def render_sensitivity_rules(df: pd.DataFrame) -> None:
         )
 
 
-def metric_step(column: str) -> float:
-    if column == "fleet_size":
-        return 1.0
-    if column in {"utilization_pct", "market_share_pct"}:
-        return 0.5
-    return 1.0
-
-
-def metric_bounds(column: str, value: float) -> tuple[float, float]:
-    if column == "fleet_size":
-        return 1.0, max(1.0, value * 2)
-    if column == "utilization_pct":
-        return 1.0, 100.0
-    if column == "market_share_pct":
-        return 0.0, 40.0
-    if column == "competitor_rate":
-        return 1.0, max(1.0, value * 2)
-    return 0.0, max(1.0, value * 2)
-
-
-def rerun_single_row(row: pd.Series, updates: dict[str, float]) -> pd.Series:
-    input_row = row[REQUIRED_COLUMNS].copy()
-    for column, value in updates.items():
-        input_row[column] = value
-    result = run_recommendations(pd.DataFrame([input_row]), DEFAULT_CONFIG)
-    return result.iloc[0]
-
-
-def comparison_frame(current: pd.Series, scenario: pd.Series) -> pd.DataFrame:
-    rows = []
-    for column in COMPARISON_COLUMNS:
-        current_value = current[column]
-        scenario_value = scenario[column]
-        if isinstance(current_value, str) or isinstance(scenario_value, str):
-            change = "changed" if current_value != scenario_value else "same"
-        else:
-            change = float(scenario_value) - float(current_value)
-        rows.append(
-            {
-                "Metric": column,
-                "Current": format_comparison_value(column, current_value),
-                "What-If": format_comparison_value(column, scenario_value),
-                "Change": format_comparison_change(column, change),
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def format_comparison_value(column: str, value: object) -> str:
-    if isinstance(value, str):
-        return value
-    numeric_value = float(value)
-    if column in {"daily_margin", "estimated_daily_profit"}:
-        return f"${numeric_value:,.2f}"
-    if column in {"daily_roi"}:
-        return f"{numeric_value:.1%}"
-    if column in {"utilization_pct", "market_share_pct", "price_gap_pct"}:
-        return f"{numeric_value:.1f}%"
-    if column in {"recommendation_score"}:
-        return f"{numeric_value:+.2f}"
-    if column in {"fleet_size", "recommended_fleet_delta"}:
-        return f"{int(round(numeric_value)):+d}" if column.endswith("_delta") else f"{int(round(numeric_value)):,}"
-    return f"{numeric_value:,.2f}"
-
-
-def format_comparison_change(column: str, value: object) -> str:
-    if isinstance(value, str):
-        return value
-    numeric_value = float(value)
-    if column in {"daily_margin", "estimated_daily_profit"}:
-        return f"{numeric_value:+,.2f}"
-    if column in {"daily_roi"}:
-        return f"{numeric_value:+.1%}"
-    if column in {"utilization_pct", "market_share_pct", "price_gap_pct"}:
-        return f"{numeric_value:+.1f} pts"
-    if column in {"recommendation_score"}:
-        return f"{numeric_value:+.2f}"
-    if column in {"fleet_size", "recommended_fleet_delta"}:
-        return f"{int(round(numeric_value)):+d}"
-    return f"{numeric_value:+,.2f}"
-
-
-def reason_code_set(value: object) -> set[str]:
-    if isinstance(value, str):
-        return {item for item in value.split("|") if item}
-    if isinstance(value, list):
-        return {str(item) for item in value}
-    return set()
-
-
 def find_metric_flip(row: pd.Series, column: str) -> dict[str, object]:
-    current_value = float(row[column])
-    current_recommendation = row["recommendation"]
-    lower, upper = metric_bounds(column, current_value)
-    step = metric_step(column)
-    candidates = []
-
-    low_steps = int(max(0, (current_value - lower) / step))
-    high_steps = int(max(0, (upper - current_value) / step))
-    for offset in range(1, max(low_steps, high_steps) + 1):
-        for direction in (-1, 1):
-            candidate = current_value + direction * offset * step
-            if candidate < lower or candidate > upper:
-                continue
-            if column == "fleet_size":
-                candidate = int(round(candidate))
-            scenario = rerun_single_row(row, {column: candidate})
-            if scenario["recommendation"] != current_recommendation:
-                candidates.append(
-                    {
-                        "metric": METRIC_LABELS[column],
-                        "current_value": current_value,
-                        "flip_value": candidate,
-                        "change_needed": candidate - current_value,
-                        "new_recommendation": scenario["recommendation"],
-                        "new_score": scenario["recommendation_score"],
-                    }
-                )
-        if candidates:
-            break
-
-    if not candidates:
-        return {
-            "metric": METRIC_LABELS[column],
-            "current_value": current_value,
-            "flip_value": None,
-            "change_needed": None,
-            "new_recommendation": "No flip in tested range",
-            "new_score": None,
-        }
-    return min(candidates, key=lambda item: abs(float(item["change_needed"])))
+    return find_metric_flip_row(row, column, METRIC_LABELS[column])
 
 
 def render_sensitivity_metrics(df: pd.DataFrame) -> None:
@@ -523,7 +359,7 @@ def render_sensitivity_metrics(df: pd.DataFrame) -> None:
 
     st.markdown("##### Current vs What-If")
     st.dataframe(
-        comparison_frame(row, scenario_row),
+        comparison_frame(row, scenario_row, COMPARISON_COLUMNS),
         width="stretch",
         hide_index=True,
     )

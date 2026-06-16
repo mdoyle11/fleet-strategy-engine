@@ -7,13 +7,8 @@ from fleet_strategy_engine.engine.explain import add_explanations
 from fleet_strategy_engine.engine.recommend import add_recommendations
 from fleet_strategy_engine.pipeline.features import add_features
 from fleet_strategy_engine.pipeline.io import (
-    INPUT_ARTIFACT,
     LOCAL_RUNS_URI,
-    RECOMMENDATIONS_ARTIFACT,
-    SUMMARY_ARTIFACT,
     PathLike,
-    load_pipeline_outputs,
-    local_run_dir,
     read_input_csv,
     write_pipeline_outputs,
 )

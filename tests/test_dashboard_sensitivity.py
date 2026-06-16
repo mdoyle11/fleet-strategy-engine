@@ -5,7 +5,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dashboard.tabs.sensitivity import comparison_frame
+from dashboard.constants import COMPARISON_COLUMNS
+from dashboard.formatting import comparison_frame
 
 
 def test_comparison_frame_formats_mixed_values_as_text() -> None:
@@ -33,7 +34,7 @@ def test_comparison_frame_formats_mixed_values_as_text() -> None:
     scenario["daily_roi"] = 0.5
     scenario["estimated_daily_profit"] = 200.0
 
-    result = comparison_frame(current, scenario)
+    result = comparison_frame(current, scenario, COMPARISON_COLUMNS)
 
     assert result["Current"].map(type).eq(str).all()
     assert result["What-If"].map(type).eq(str).all()

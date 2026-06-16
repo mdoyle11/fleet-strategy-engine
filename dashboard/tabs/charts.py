@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 
 from dashboard.constants import ACTION_COLORS, SEGMENT_ORDER
+from fleet_strategy_engine.config import DEFAULT_CONFIG
 
 
 def action_ranking_frame(df: pd.DataFrame, action: str, limit: int = 12) -> pd.DataFrame:
@@ -231,8 +232,16 @@ def render_charts(df: pd.DataFrame) -> None:
             "recommendation_score": "Recommendation Signal",
         },
     )
-    price_util_fig.add_hline(y=75, line_dash="dash", line_color="#94a3b8")
-    price_util_fig.add_hline(y=90, line_dash="dash", line_color="#94a3b8")
+    price_util_fig.add_hline(
+        y=DEFAULT_CONFIG.underutilized_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    price_util_fig.add_hline(
+        y=DEFAULT_CONFIG.high_utilization_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     price_util_fig.add_vline(x=-10, line_dash="dash", line_color="#94a3b8")
     price_util_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
     price_util_fig.update_layout(title="Pricing vs Utilization")
@@ -265,10 +274,26 @@ def render_charts(df: pd.DataFrame) -> None:
             "price_gap_pct": "Price Gap vs Competitor %",
         },
     )
-    market_position_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
-    market_position_fig.add_vline(x=90, line_dash="dash", line_color="#94a3b8")
-    market_position_fig.add_hline(y=9, line_dash="dash", line_color="#94a3b8")
-    market_position_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
+    market_position_fig.add_vline(
+        x=DEFAULT_CONFIG.underutilized_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    market_position_fig.add_vline(
+        x=DEFAULT_CONFIG.high_utilization_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    market_position_fig.add_hline(
+        y=DEFAULT_CONFIG.weak_market_share_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    market_position_fig.add_hline(
+        y=DEFAULT_CONFIG.strong_market_share_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     market_position_fig.update_layout(title="Market Share vs Utilization")
     st.plotly_chart(market_position_fig, use_container_width=True)
 
@@ -299,11 +324,27 @@ def render_charts(df: pd.DataFrame) -> None:
             "price_gap_pct": "Price Gap vs Competitor %",
         },
     )
-    roi_util_fig.add_vline(x=75, line_dash="dash", line_color="#94a3b8")
-    roi_util_fig.add_vline(x=90, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_vline(
+        x=DEFAULT_CONFIG.underutilized_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    roi_util_fig.add_vline(
+        x=DEFAULT_CONFIG.high_utilization_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     roi_util_fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
-    roi_util_fig.add_hline(y=0.25, line_dash="dash", line_color="#94a3b8")
-    roi_util_fig.add_hline(y=0.75, line_dash="dash", line_color="#94a3b8")
+    roi_util_fig.add_hline(
+        y=DEFAULT_CONFIG.thin_roi_threshold,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    roi_util_fig.add_hline(
+        y=DEFAULT_CONFIG.strong_roi_threshold,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     roi_util_fig.update_layout(title="ROI vs Utilization")
     st.plotly_chart(roi_util_fig, use_container_width=True)
 
@@ -339,8 +380,16 @@ def render_charts(df: pd.DataFrame) -> None:
     roi_price_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
     roi_price_fig.add_vline(x=10, line_dash="dash", line_color="#94a3b8")
     roi_price_fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
-    roi_price_fig.add_hline(y=0.25, line_dash="dash", line_color="#94a3b8")
-    roi_price_fig.add_hline(y=0.75, line_dash="dash", line_color="#94a3b8")
+    roi_price_fig.add_hline(
+        y=DEFAULT_CONFIG.thin_roi_threshold,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    roi_price_fig.add_hline(
+        y=DEFAULT_CONFIG.strong_roi_threshold,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     roi_price_fig.update_layout(title="ROI vs Price Gap")
     st.plotly_chart(roi_price_fig, use_container_width=True)
 
@@ -375,7 +424,15 @@ def render_charts(df: pd.DataFrame) -> None:
     market_price_fig.add_vline(x=-10, line_dash="dash", line_color="#94a3b8")
     market_price_fig.add_vline(x=0, line_dash="dot", line_color="#94a3b8")
     market_price_fig.add_vline(x=10, line_dash="dash", line_color="#94a3b8")
-    market_price_fig.add_hline(y=9, line_dash="dash", line_color="#94a3b8")
-    market_price_fig.add_hline(y=15, line_dash="dash", line_color="#94a3b8")
+    market_price_fig.add_hline(
+        y=DEFAULT_CONFIG.weak_market_share_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
+    market_price_fig.add_hline(
+        y=DEFAULT_CONFIG.strong_market_share_pct,
+        line_dash="dash",
+        line_color="#94a3b8",
+    )
     market_price_fig.update_layout(title="Market Share vs Price Gap")
     st.plotly_chart(market_price_fig, use_container_width=True)

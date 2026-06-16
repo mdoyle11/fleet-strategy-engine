@@ -4,10 +4,18 @@ from typing import Any, Optional
 import pandas as pd
 
 from fleet_strategy_engine.config import DEFAULT_CONFIG, EngineConfig
-from fleet_strategy_engine.engine.explain import add_explanations
-from fleet_strategy_engine.engine.recommend import add_recommendations
-from fleet_strategy_engine.pipeline.features import add_features
-from fleet_strategy_engine.pipeline.validate import validate_input
+from fleet_strategy_engine.recommendation_context import (
+    compact_recommendation_row,
+    reason_code_set,
+    recommendation_counts,
+)
+from fleet_strategy_engine.scenario_analysis import (
+    add_fragility_columns,
+    compare_rule_outputs,
+    downside_updates as build_downside_updates,
+    fragile_recommendations as build_fragile_recommendations,
+    run_recommendations,
+)
 from fleet_strategy_engine.schemas import REQUIRED_COLUMNS
 
 
@@ -30,35 +38,10 @@ METRIC_FIELD_BOUNDS = {
     "competitor_rate": (0.01, None),
     "market_share_pct": (0.0, 100.0),
 }
-DOWNSIDE_CASES = {
-    "mild": {
-        "utilization_pct_delta": -2.0,
-        "market_share_pct_delta": -1.0,
-        "avg_daily_fleet_cost_pct_delta": 0.05,
-    },
-    "moderate": {
-        "utilization_pct_delta": -4.0,
-        "market_share_pct_delta": -2.0,
-        "avg_daily_fleet_cost_pct_delta": 0.10,
-    },
-    "severe": {
-        "utilization_pct_delta": -7.0,
-        "market_share_pct_delta": -4.0,
-        "avg_daily_fleet_cost_pct_delta": 0.15,
-    },
-}
 
 
 class ScenarioToolError(ValueError):
     pass
-
-
-def run_recommendations(df: pd.DataFrame, config: EngineConfig = DEFAULT_CONFIG) -> pd.DataFrame:
-    input_df = df[REQUIRED_COLUMNS].copy()
-    validate_input(input_df)
-    featured = add_features(input_df, config)
-    recommended = add_recommendations(featured, config)
-    return add_explanations(recommended)
 
 
 def bounded_updates(
@@ -109,63 +92,7 @@ def config_with_updates(updates: dict[str, Any]) -> EngineConfig:
 
 
 def filtered_counts(df: pd.DataFrame) -> dict[str, int]:
-    counts = df["recommendation"].value_counts()
-    return {action: int(counts.get(action, 0)) for action in ("BUY", "HOLD", "REDUCE")}
-
-
-def score_margin_to_action_threshold(score: float) -> float:
-    if score >= 0.35:
-        return round(score - 0.35, 2)
-    if score <= -0.35:
-        return round(abs(score + 0.35), 2)
-    return round(min(0.35 - score, score + 0.35), 2)
-
-
-def threshold_proximity(row: pd.Series, config: EngineConfig) -> tuple[str, float]:
-    daily_roi_pct = float(row["daily_roi"]) * 100
-    thresholds = [
-        ("utilization to 70%", abs(float(row["utilization_pct"]) - 70)),
-        (
-            f"utilization to {config.underutilized_pct:.1f}%",
-            abs(float(row["utilization_pct"]) - config.underutilized_pct),
-        ),
-        ("utilization to 88%", abs(float(row["utilization_pct"]) - 88)),
-        (
-            f"utilization to {config.high_utilization_pct:.1f}%",
-            abs(float(row["utilization_pct"]) - config.high_utilization_pct),
-        ),
-        (
-            f"ROI to {config.thin_roi_threshold:.0%}",
-            abs(daily_roi_pct - config.thin_roi_threshold * 100),
-        ),
-        (
-            f"ROI to {config.strong_roi_threshold:.0%}",
-            abs(daily_roi_pct - config.strong_roi_threshold * 100),
-        ),
-        (
-            f"market share to {config.weak_market_share_pct:.1f}%",
-            abs(float(row["market_share_pct"]) - config.weak_market_share_pct),
-        ),
-        (
-            f"market share to {config.strong_market_share_pct:.1f}%",
-            abs(float(row["market_share_pct"]) - config.strong_market_share_pct),
-        ),
-        ("price gap to -10%", abs(float(row["price_gap_pct"]) + 10)),
-        ("price gap to +5%", abs(float(row["price_gap_pct"]) - 5)),
-        ("price gap to +10%", abs(float(row["price_gap_pct"]) - 10)),
-    ]
-    return min(thresholds, key=lambda item: item[1])
-
-
-def add_fragility_columns(df: pd.DataFrame, config: EngineConfig) -> pd.DataFrame:
-    fragile = df.copy()
-    proximity = fragile.apply(lambda row: threshold_proximity(row, config), axis=1)
-    fragile["nearest_rule_threshold"] = [item[0] for item in proximity]
-    fragile["nearest_threshold_distance"] = [round(float(item[1]), 2) for item in proximity]
-    fragile["score_margin_to_action_change"] = fragile["recommendation_score"].apply(
-        score_margin_to_action_threshold
-    )
-    return fragile
+    return recommendation_counts(df)
 
 
 def fragile_recommendations(
@@ -173,23 +100,10 @@ def fragile_recommendations(
     limit: int = 10,
     recommendation_filter: Optional[str] = None,
 ) -> pd.DataFrame:
-    recommended = run_recommendations(df, DEFAULT_CONFIG)
-    fragile = add_fragility_columns(recommended, DEFAULT_CONFIG)
-    if recommendation_filter:
-        action = recommendation_filter.upper()
-        if action not in {"BUY", "HOLD", "REDUCE"}:
-            raise ScenarioToolError("recommendation_filter must be BUY, HOLD, or REDUCE")
-        fragile = fragile[fragile["recommendation"] == action]
-
-    return fragile.sort_values(
-        [
-            "score_margin_to_action_change",
-            "nearest_threshold_distance",
-            "confidence",
-            "station",
-            "segment",
-        ]
-    ).head(max(1, int(limit)))
+    try:
+        return build_fragile_recommendations(df, limit, recommendation_filter)
+    except ValueError as exc:
+        raise ScenarioToolError(str(exc)) from exc
 
 
 def compact_fragile_row(row: pd.Series) -> dict[str, Any]:
@@ -215,26 +129,10 @@ def compact_fragile_row(row: pd.Series) -> dict[str, Any]:
 
 
 def downside_updates(row: pd.Series, downside_case: str) -> dict[str, float]:
-    case = DOWNSIDE_CASES.get(downside_case.lower())
-    if case is None:
-        raise ScenarioToolError(
-            "downside_case must be one of: " + ", ".join(sorted(DOWNSIDE_CASES))
-        )
-    return {
-        "utilization_pct": max(
-            0.0,
-            min(100.0, float(row["utilization_pct"]) + case["utilization_pct_delta"]),
-        ),
-        "market_share_pct": max(
-            0.0,
-            min(100.0, float(row["market_share_pct"]) + case["market_share_pct_delta"]),
-        ),
-        "avg_daily_fleet_cost": max(
-            0.0,
-            float(row["avg_daily_fleet_cost"])
-            * (1 + case["avg_daily_fleet_cost_pct_delta"]),
-        ),
-    }
+    try:
+        return build_downside_updates(row, downside_case)
+    except ValueError as exc:
+        raise ScenarioToolError(str(exc)) from exc
 
 
 def find_fragile_recommendations(
@@ -270,44 +168,7 @@ def rule_scenario(df: pd.DataFrame, updates: dict[str, Any]) -> dict[str, Any]:
     config = config_with_updates(updates)
     baseline = run_recommendations(df, DEFAULT_CONFIG)
     scenario = run_recommendations(df, config)
-    comparison = baseline.merge(
-        scenario[
-            [
-                "station",
-                "segment",
-                "recommendation",
-                "recommendation_score",
-                "confidence",
-                "recommended_fleet_delta",
-                "reason_codes",
-            ]
-        ].rename(
-            columns={
-                "recommendation": "scenario_recommendation",
-                "recommendation_score": "scenario_recommendation_score",
-                "confidence": "scenario_confidence",
-                "recommended_fleet_delta": "scenario_recommended_fleet_delta",
-                "reason_codes": "scenario_reason_codes",
-            }
-        ),
-        on=["station", "segment"],
-        how="left",
-    )
-    comparison["scenario_change"] = comparison.apply(
-        lambda row: (
-            "Stable"
-            if row["recommendation"] == row["scenario_recommendation"]
-            else f"{row['recommendation']} -> {row['scenario_recommendation']}"
-        ),
-        axis=1,
-    )
-    comparison["score_change"] = (
-        comparison["scenario_recommendation_score"] - comparison["recommendation_score"]
-    )
-    comparison["delta_change"] = (
-        comparison["scenario_recommended_fleet_delta"]
-        - comparison["recommended_fleet_delta"]
-    )
+    comparison = compare_rule_outputs(baseline, scenario)
     changed = comparison[comparison["scenario_change"] != "Stable"].copy()
     fragile = add_fragility_columns(baseline, DEFAULT_CONFIG).sort_values(
         ["score_margin_to_action_change", "nearest_threshold_distance"]
@@ -363,35 +224,7 @@ def select_opportunity(df: pd.DataFrame, station: str, segment: str) -> pd.Serie
 
 
 def compact_row(row: pd.Series) -> dict[str, Any]:
-    return {
-        "station": row["station"],
-        "segment": row["segment"],
-        "fleet_size": int(round(float(row["fleet_size"]))),
-        "utilization_pct": round(float(row["utilization_pct"]), 2),
-        "avg_daily_rate": round(float(row["avg_daily_rate"]), 2),
-        "avg_daily_fleet_cost": round(float(row["avg_daily_fleet_cost"]), 2),
-        "avg_daily_operating_cost": round(float(row["avg_daily_operating_cost"]), 2),
-        "competitor_rate": round(float(row["competitor_rate"]), 2),
-        "market_share_pct": round(float(row["market_share_pct"]), 2),
-        "daily_margin": round(float(row["daily_margin"]), 2),
-        "daily_roi": round(float(row["daily_roi"]), 4),
-        "estimated_daily_profit": round(float(row["estimated_daily_profit"]), 2),
-        "price_gap_pct": round(float(row["price_gap_pct"]), 2),
-        "recommendation": row["recommendation"],
-        "recommendation_score": round(float(row["recommendation_score"]), 2),
-        "confidence": row["confidence"],
-        "recommended_fleet_delta": int(row["recommended_fleet_delta"]),
-        "reason_codes": row["reason_codes"],
-        "reasoning": row["reasoning"],
-    }
-
-
-def reason_code_set(value: object) -> set[str]:
-    if isinstance(value, str):
-        return {item for item in value.split("|") if item}
-    if isinstance(value, list):
-        return {str(item) for item in value}
-    return set()
+    return compact_recommendation_row(row)
 
 
 def metric_scenario(

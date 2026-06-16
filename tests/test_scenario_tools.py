@@ -4,8 +4,10 @@ import pytest
 from fleet_strategy_engine.assistant.scenario_tools import (
     ScenarioToolError,
     config_with_updates,
+    find_fragile_recommendations,
     metric_scenario,
     rule_scenario,
+    run_scenario_tool,
 )
 
 
@@ -74,3 +76,33 @@ def test_metric_scenario_reruns_single_opportunity() -> None:
 def test_metric_scenario_rejects_missing_opportunity() -> None:
     with pytest.raises(ScenarioToolError, match="No opportunity found"):
         metric_scenario(sample_input(), "ATL", "SUV", {"utilization_pct": 80})
+
+
+def test_find_fragile_recommendations_filters_to_buy_rows() -> None:
+    result = find_fragile_recommendations(
+        sample_input(),
+        limit=1,
+        recommendation_filter="BUY",
+    )
+
+    assert result["tool"] == "find_fragile_recommendations"
+    assert len(result["fragile_rows"]) == 1
+    assert result["fragile_rows"][0]["recommendation"] == "BUY"
+    assert "nearest_rule_threshold" in result["fragile_rows"][0]
+
+
+def test_find_fragile_recommendations_can_run_downside_case() -> None:
+    result = run_scenario_tool(
+        sample_input(),
+        "find_fragile_recommendations",
+        {
+            "limit": 1,
+            "recommendation_filter": "BUY",
+            "downside_case": "moderate",
+        },
+    )
+
+    assert len(result["fragile_rows"]) == 1
+    assert len(result["downside_results"]) == 1
+    assert result["downside_results"][0]["tool"] == "run_metric_scenario"
+    assert result["downside_results"][0]["station"] == result["fragile_rows"][0]["station"]

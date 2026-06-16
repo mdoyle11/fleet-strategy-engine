@@ -5,10 +5,14 @@ import pandas as pd
 import streamlit as st
 
 import fleet_strategy_engine.assistant as assistant_module
+import fleet_strategy_engine.assistant.core as assistant_core
+import fleet_strategy_engine.assistant.graph as assistant_graph
+import fleet_strategy_engine.assistant.nodes as assistant_nodes
+import fleet_strategy_engine.assistant.query_tools as query_tools
+import fleet_strategy_engine.assistant.scenario_tools as scenario_tools
 from fleet_strategy_engine.assistant import (
     AssistantConfigurationError,
     AssistantValidationError,
-    answer_question,
 )
 
 
@@ -25,6 +29,15 @@ def configure_assistant_environment() -> bool:
     if secret_model:
         os.environ["GEMINI_MODEL"] = secret_model
     return bool(os.environ.get("GOOGLE_API_KEY"))
+
+
+def reloaded_assistant_module():
+    importlib.reload(query_tools)
+    importlib.reload(scenario_tools)
+    importlib.reload(assistant_core)
+    importlib.reload(assistant_nodes)
+    importlib.reload(assistant_graph)
+    return importlib.reload(assistant_module)
 
 
 def render_assistant(df: pd.DataFrame) -> None:
@@ -65,7 +78,8 @@ def render_assistant(df: pd.DataFrame) -> None:
     with st.chat_message("assistant"):
         with st.spinner("Reviewing filtered recommendations..."):
             try:
-                answer = answer_question(
+                assistant = reloaded_assistant_module()
+                answer = assistant.answer_question(
                     question,
                     df,
                     st.session_state["assistant_messages"][:-1],
@@ -129,7 +143,7 @@ def render_scenario_assistant(df: pd.DataFrame, scope: str) -> None:
     with st.chat_message("assistant"):
         with st.spinner("Running deterministic scenario tool..."):
             try:
-                scenario_assistant = importlib.reload(assistant_module)
+                scenario_assistant = reloaded_assistant_module()
                 answer = scenario_assistant.answer_scenario_question(
                     request,
                     df,
@@ -146,5 +160,3 @@ def render_scenario_assistant(df: pd.DataFrame, scope: str) -> None:
             st.markdown(answer)
 
     st.session_state[state_key].append({"role": "assistant", "content": answer})
-
-

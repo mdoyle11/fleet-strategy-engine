@@ -142,49 +142,51 @@ def render_sensitivity_rules(df: pd.DataFrame) -> None:
         st.info("No rows match the current filters.")
         return
 
-    controls, results = st.columns([1, 2])
-    with controls:
+    scenario_area, assistant_area = st.columns([2, 3])
+    with scenario_area:
         config = scenario_config_from_sidebar()
+
+    with assistant_area:
+        render_scenario_assistant(df, "rules")
 
     scenario_df = run_recommendations(df, config)
     comparison = compare_rule_scenario(df, scenario_df)
     fragile = add_fragility_columns(df, DEFAULT_CONFIG)
     changed = comparison[comparison["scenario_change"] != "Stable"].copy()
 
-    with results:
-        counts = filtered_counts(scenario_df)
-        top = st.columns(5)
-        top[0].metric("Changed Rows", f"{len(changed):,}")
-        top[1].metric("BUY", f"{counts['BUY']:,}")
-        top[2].metric("HOLD", f"{counts['HOLD']:,}")
-        top[3].metric("REDUCE", f"{counts['REDUCE']:,}")
-        top[4].metric(
-            "Net Delta",
-            f"{int(scenario_df['recommended_fleet_delta'].sum()):+}",
-            delta=(
-                int(scenario_df["recommended_fleet_delta"].sum())
-                - int(df["recommended_fleet_delta"].sum())
-            ),
-        )
+    counts = filtered_counts(scenario_df)
+    top = st.columns(5)
+    top[0].metric("Changed Rows", f"{len(changed):,}")
+    top[1].metric("BUY", f"{counts['BUY']:,}")
+    top[2].metric("HOLD", f"{counts['HOLD']:,}")
+    top[3].metric("REDUCE", f"{counts['REDUCE']:,}")
+    top[4].metric(
+        "Net Delta",
+        f"{int(scenario_df['recommended_fleet_delta'].sum()):+}",
+        delta=(
+            int(scenario_df["recommended_fleet_delta"].sum())
+            - int(df["recommended_fleet_delta"].sum())
+        ),
+    )
 
-        if changed.empty:
-            st.success("No recommendations changed under the selected rule assumptions.")
-        else:
-            change_counts = (
-                changed["scenario_change"]
-                .value_counts()
-                .rename_axis("Change")
-                .reset_index(name="Rows")
-            )
-            change_fig = px.bar(
-                change_counts,
-                x="Change",
-                y="Rows",
-                color="Change",
-                color_discrete_sequence=px.colors.qualitative.Set2,
-                title="Recommendation Changes by Scenario",
-            )
-            st.plotly_chart(change_fig, use_container_width=True)
+    if changed.empty:
+        st.success("No recommendations changed under the selected rule assumptions.")
+    else:
+        change_counts = (
+            changed["scenario_change"]
+            .value_counts()
+            .rename_axis("Change")
+            .reset_index(name="Rows")
+        )
+        change_fig = px.bar(
+            change_counts,
+            x="Change",
+            y="Rows",
+            color="Change",
+            color_discrete_sequence=px.colors.qualitative.Set2,
+            title="Recommendation Changes by Scenario",
+        )
+        st.plotly_chart(change_fig, use_container_width=True)
 
     st.markdown("##### Fragile Recommendations")
     st.caption(
@@ -288,8 +290,6 @@ def render_sensitivity_rules(df: pd.DataFrame) -> None:
                 ),
             },
         )
-
-    render_scenario_assistant(df, "rules")
 
 
 def metric_step(column: str) -> float:
@@ -403,16 +403,16 @@ def render_sensitivity_metrics(df: pd.DataFrame) -> None:
         st.info("No rows match the current filters.")
         return
 
-    selected = st.selectbox(
-        "Select opportunity",
-        choices["label"],
-        key="metric_sensitivity_row",
-    )
-    row = choices.loc[choices["label"] == selected].iloc[0]
+    scenario_area, assistant_area = st.columns([2, 3])
+    with scenario_area:
+        selected = st.selectbox(
+            "Select opportunity",
+            choices["label"],
+            key="metric_sensitivity_row",
+        )
+        row = choices.loc[choices["label"] == selected].iloc[0]
 
-    controls, output = st.columns([1, 2])
-    updates: dict[str, float] = {}
-    with controls:
+        updates: dict[str, float] = {}
         st.markdown("##### What-If Inputs")
         for column in REQUIRED_COLUMNS:
             if column in {"station", "segment"}:
@@ -437,6 +437,8 @@ def render_sensitivity_metrics(df: pd.DataFrame) -> None:
                     step=float(step),
                     format="%.2f",
                 )
+    with assistant_area:
+        render_scenario_assistant(df, "metrics")
 
     scenario_row = rerun_single_row(row, updates)
     added_codes = reason_code_set(scenario_row["reason_codes"]) - reason_code_set(
@@ -446,45 +448,44 @@ def render_sensitivity_metrics(df: pd.DataFrame) -> None:
         scenario_row["reason_codes"]
     )
 
-    with output:
-        metrics = st.columns(5)
-        metrics[0].metric(
-            "Recommendation",
-            scenario_row["recommendation"],
-            delta=(
-                "changed"
-                if scenario_row["recommendation"] != row["recommendation"]
-                else "stable"
-            ),
-        )
-        metrics[1].metric(
-            "Signal",
-            f"{scenario_row['recommendation_score']:+.2f}",
-            delta=f"{scenario_row['recommendation_score'] - row['recommendation_score']:+.2f}",
-        )
-        metrics[2].metric("Confidence", scenario_row["confidence"])
-        metrics[3].metric(
-            "Fleet Delta",
-            f"{int(scenario_row['recommended_fleet_delta']):+}",
-            delta=int(
-                scenario_row["recommended_fleet_delta"]
-                - row["recommended_fleet_delta"]
-            ),
-        )
-        metrics[4].metric(
-            "Daily ROI",
-            f"{scenario_row['daily_roi']:.1%}",
-            delta=f"{scenario_row['daily_roi'] - row['daily_roi']:+.1%}",
-        )
+    metrics = st.columns(5)
+    metrics[0].metric(
+        "Recommendation",
+        scenario_row["recommendation"],
+        delta=(
+            "changed"
+            if scenario_row["recommendation"] != row["recommendation"]
+            else "stable"
+        ),
+    )
+    metrics[1].metric(
+        "Signal",
+        f"{scenario_row['recommendation_score']:+.2f}",
+        delta=f"{scenario_row['recommendation_score'] - row['recommendation_score']:+.2f}",
+    )
+    metrics[2].metric("Confidence", scenario_row["confidence"])
+    metrics[3].metric(
+        "Fleet Delta",
+        f"{int(scenario_row['recommended_fleet_delta']):+}",
+        delta=int(
+            scenario_row["recommended_fleet_delta"]
+            - row["recommended_fleet_delta"]
+        ),
+    )
+    metrics[4].metric(
+        "Daily ROI",
+        f"{scenario_row['daily_roi']:.1%}",
+        delta=f"{scenario_row['daily_roi'] - row['daily_roi']:+.1%}",
+    )
 
-        st.write(scenario_row["reasoning"])
-        reason_cols = st.columns(2)
-        reason_cols[0].write(
-            "Added reason codes: " + (", ".join(sorted(added_codes)) or "none")
-        )
-        reason_cols[1].write(
-            "Removed reason codes: " + (", ".join(sorted(removed_codes)) or "none")
-        )
+    st.write(scenario_row["reasoning"])
+    reason_cols = st.columns(2)
+    reason_cols[0].write(
+        "Added reason codes: " + (", ".join(sorted(added_codes)) or "none")
+    )
+    reason_cols[1].write(
+        "Removed reason codes: " + (", ".join(sorted(removed_codes)) or "none")
+    )
 
     st.markdown("##### Current vs What-If")
     st.dataframe(
@@ -519,7 +520,3 @@ def render_sensitivity_metrics(df: pd.DataFrame) -> None:
             "new_score": st.column_config.NumberColumn("new score", format="%+.2f"),
         },
     )
-
-    render_scenario_assistant(df, "metrics")
-
-

@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -28,6 +28,53 @@ say that the dashboard context does not support that answer.
 Provide detailed, planner-facing explanations. Use reason code descriptions to
 explain why a decision was made, identify tradeoffs when BUY and REDUCE pressure
 coexist, and distinguish recommendation_score from confidence.
+"""
+
+QUERY_TOOL_SYSTEM_PROMPT = """
+You decide whether a fleet dashboard question needs a deterministic lookup or
+filter query before answering.
+
+Return only valid JSON. Do not include markdown or prose.
+
+Available tools:
+1. lookup_opportunity
+Use for a specific station / segment request.
+Shape:
+{
+  "tool": "lookup_opportunity",
+  "arguments": {"station": "ATL", "segment": "SUV"}
+}
+
+2. query_opportunities
+Use for region, segment, recommendation, confidence, or metric-range queries.
+Shape:
+{
+  "tool": "query_opportunities",
+  "arguments": {
+    "filters": {
+      "region": "West",
+      "segment": "SUV",
+      "recommendation": "BUY",
+      "confidence": "low",
+      "utilization_pct": {"min": 90},
+      "daily_roi": {"max": 0.25},
+      "market_share_pct": {"min": 15}
+    },
+    "sort_by": "recommendation_score",
+    "sort_direction": "desc",
+    "limit": 20
+  }
+}
+
+3. none
+Use when the question asks about the current portfolio generally and does not
+need a narrower deterministic row set.
+Shape:
+{"tool": "none", "arguments": {}, "issue": ""}
+
+Only use text/numeric fields listed in the provided context. Use exact available
+values where possible. If the user asks for the "top" or "highest" rows, include
+an appropriate sort_by and limit.
 """
 
 VALIDATOR_SYSTEM_PROMPT = """
@@ -104,8 +151,29 @@ Arguments shape:
   }
 }
 
-Only include fields the user explicitly asked to change. If the request is ambiguous,
-return:
+3. find_fragile_recommendations
+Use when the user asks to find, rank, inspect, or stress-test fragile
+recommendations without naming a specific metric update.
+Arguments shape:
+{
+  "tool": "find_fragile_recommendations",
+  "arguments": {
+    "limit": 5,
+    "recommendation_filter": "BUY",
+    "downside_case": "moderate"
+  }
+}
+recommendation_filter is optional and must be BUY, HOLD, or REDUCE.
+downside_case is optional and must be mild, moderate, or severe. Include
+downside_case when the user asks to stress test, test downside, pressure test,
+or run scenario analysis on fragile rows.
+
+For find_fragile_recommendations, the user does not need to request a threshold
+or metric update. It is a read-only query tool. If the user asks for fragile BUY
+opportunities, set recommendation_filter to BUY. If no limit is specified, use 5.
+
+For update tools, only include fields the user explicitly asked to change. If an
+update request is ambiguous, return:
 {"tool": "none", "arguments": {}, "issue": "what is missing"}
 
 Do not invent station/segment pairs. Use only station/segment pairs visible in the
@@ -238,6 +306,30 @@ def parse_validation_result(raw_result: str) -> dict[str, Any]:
     }
 
 
+def parse_query_tool_request(raw_result: str) -> dict[str, Any]:
+    cleaned = raw_result.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        cleaned = cleaned.removeprefix("json").strip()
+
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise AssistantValidationError("Query planner returned non-JSON output.") from exc
+
+    tool = result.get("tool")
+    if tool not in {"lookup_opportunity", "query_opportunities", "none"}:
+        raise AssistantValidationError("Query planner returned an unsupported tool.")
+    arguments = result.get("arguments", {})
+    if not isinstance(arguments, dict):
+        raise AssistantValidationError("Query planner returned invalid tool arguments.")
+    return {
+        "tool": tool,
+        "arguments": arguments,
+        "issue": str(result.get("issue", "")),
+    }
+
+
 def parse_scenario_tool_request(raw_result: str) -> dict[str, Any]:
     cleaned = raw_result.strip()
     if cleaned.startswith("```"):
@@ -250,7 +342,12 @@ def parse_scenario_tool_request(raw_result: str) -> dict[str, Any]:
         raise AssistantValidationError("Scenario assistant returned non-JSON output.") from exc
 
     tool = result.get("tool")
-    if tool not in {"run_rule_scenario", "run_metric_scenario", "none"}:
+    if tool not in {
+        "run_rule_scenario",
+        "run_metric_scenario",
+        "find_fragile_recommendations",
+        "none",
+    }:
         raise AssistantValidationError("Scenario assistant returned an unsupported tool.")
     arguments = result.get("arguments", {})
     if not isinstance(arguments, dict):
@@ -259,6 +356,42 @@ def parse_scenario_tool_request(raw_result: str) -> dict[str, Any]:
         "tool": tool,
         "arguments": arguments,
         "issue": str(result.get("issue", "")),
+    }
+
+
+def fragile_query_tool_request(question: str) -> Optional[dict[str, Any]]:
+    lowered = question.lower()
+    if "fragile" not in lowered:
+        return None
+    if not any(word in lowered for word in ("find", "most", "show", "what", "which", "rank")):
+        return None
+
+    recommendation_filter = None
+    if "buy" in lowered:
+        recommendation_filter = "BUY"
+    elif "hold" in lowered:
+        recommendation_filter = "HOLD"
+    elif "reduce" in lowered or "reduction" in lowered:
+        recommendation_filter = "REDUCE"
+
+    downside_case = None
+    if "severe" in lowered:
+        downside_case = "severe"
+    elif "moderate" in lowered:
+        downside_case = "moderate"
+    elif "mild" in lowered:
+        downside_case = "mild"
+    elif any(term in lowered for term in ("downside", "stress", "pressure test", "scenario analysis")):
+        downside_case = "moderate"
+
+    return {
+        "tool": "find_fragile_recommendations",
+        "arguments": {
+            "limit": 5,
+            "recommendation_filter": recommendation_filter,
+            "downside_case": downside_case,
+        },
+        "issue": "",
     }
 
 
@@ -334,6 +467,8 @@ def answer_question(
             {
                 "messages": [*history_to_messages(chat_history), HumanMessage(content=question)],
                 "context": build_assistant_context(df),
+                "source_df": df,
+                "query_request": {"tool": "none", "arguments": {}, "issue": ""},
                 "answer": "",
                 "validation": {"valid": False, "issue": ""},
                 "repair_attempts": 0,
@@ -385,6 +520,10 @@ def scenario_tool_context(df: pd.DataFrame, scope: str) -> dict[str, Any]:
             "competitor_rate",
             "market_share_pct",
         ],
+        "available_read_only_tools": [
+            "find_fragile_recommendations",
+        ],
+        "available_downside_cases": ["mild", "moderate", "severe"],
     }
 
 
@@ -400,6 +539,30 @@ def deterministic_scenario_fallback(result: dict[str, Any]) -> str:
             f"to {result['scenario_net_delta']:+}.\n"
             "This is a deterministic rule rerun, not a demand forecast."
         )
+    if result.get("tool") == "find_fragile_recommendations":
+        rows = result.get("fragile_rows", [])
+        if not rows:
+            return "No matching fragile recommendations were found in the current filters."
+        top = rows[0]
+        text = (
+            "Fragile recommendation scan:\n\n"
+            f"Top match: {top['station']} / {top['segment']} "
+            f"({top['recommendation']}, score {top['recommendation_score']:+.2f}). "
+            f"Its score margin to an action change is "
+            f"{top['score_margin_to_action_change']:.2f}, with nearest threshold "
+            f"{top['nearest_rule_threshold']} "
+            f"({top['nearest_threshold_distance']:.2f} pts away)."
+        )
+        if result.get("downside_results"):
+            downside = result["downside_results"][0]
+            text += (
+                "\n\nDownside rerun: "
+                f"{downside['station']} / {downside['segment']} changed from "
+                f"{downside['current']['recommendation']} to "
+                f"{downside['scenario']['recommendation']} with score change "
+                f"{downside['score_change']:+.2f}."
+            )
+        return text
     scenario = result["scenario"]
     current = result["current"]
     return (
@@ -420,21 +583,29 @@ def answer_scenario_question(
 ) -> str:
     context = scenario_tool_context(df, scope)
     try:
-        tool_response = llm().invoke(
-            [
-                system_with_context(SCENARIO_TOOL_SYSTEM_PROMPT, context),
-                *history_to_messages(chat_history),
-                HumanMessage(content=question),
-            ]
-        )
-        tool_request = parse_scenario_tool_request(text_from_response(tool_response))
+        tool_request = fragile_query_tool_request(question)
+        if tool_request is None:
+            tool_response = llm().invoke(
+                [
+                    system_with_context(SCENARIO_TOOL_SYSTEM_PROMPT, context),
+                    *history_to_messages(chat_history),
+                    HumanMessage(content=question),
+                ]
+            )
+            tool_request = parse_scenario_tool_request(text_from_response(tool_response))
         if tool_request["tool"] == "none":
             return tool_request["issue"] or "Please specify the scenario to run."
 
-        if scope == "rules" and tool_request["tool"] != "run_rule_scenario":
-            return "This rules scenario assistant can only change rule thresholds."
-        if scope == "metrics" and tool_request["tool"] != "run_metric_scenario":
-            return "This metrics scenario assistant can only change one opportunity's metrics."
+        if scope == "rules" and tool_request["tool"] not in {
+            "run_rule_scenario",
+            "find_fragile_recommendations",
+        }:
+            return "This rules scenario assistant can change rule thresholds or find fragile recommendations."
+        if scope == "metrics" and tool_request["tool"] not in {
+            "run_metric_scenario",
+            "find_fragile_recommendations",
+        }:
+            return "This metrics scenario assistant can change opportunity metrics or find fragile recommendations."
 
         tool_result = run_scenario_tool(
             df,

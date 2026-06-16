@@ -5,7 +5,9 @@ from fleet_strategy_engine.assistant import (
     AssistantValidationError,
     build_assistant_context,
     deterministic_fallback,
+    fragile_query_tool_request,
     parse_validation_result,
+    parse_query_tool_request,
     parse_scenario_tool_request,
     route_after_validation,
 )
@@ -75,6 +77,26 @@ def test_parse_validation_result_requires_boolean_valid_flag() -> None:
         parse_validation_result("not json")
 
 
+def test_parse_query_tool_request_requires_supported_tool() -> None:
+    assert parse_query_tool_request(
+        '{"tool": "query_opportunities", "arguments": {"filters": {"region": "West"}}}'
+    ) == {
+        "tool": "query_opportunities",
+        "arguments": {"filters": {"region": "West"}},
+        "issue": "",
+    }
+    assert parse_query_tool_request(
+        '{"tool": "lookup_opportunity", "arguments": {"station": "JFK", "segment": "SUV"}}'
+    ) == {
+        "tool": "lookup_opportunity",
+        "arguments": {"station": "JFK", "segment": "SUV"},
+        "issue": "",
+    }
+
+    with pytest.raises(AssistantValidationError):
+        parse_query_tool_request('{"tool": "unsupported", "arguments": {}}')
+
+
 def test_parse_scenario_tool_request_requires_supported_tool() -> None:
     assert parse_scenario_tool_request(
         '{"tool": "run_rule_scenario", "arguments": {"updates": {"high_utilization_pct": 88}}}'
@@ -83,9 +105,40 @@ def test_parse_scenario_tool_request_requires_supported_tool() -> None:
         "arguments": {"updates": {"high_utilization_pct": 88}},
         "issue": "",
     }
+    assert parse_scenario_tool_request(
+        '{"tool": "find_fragile_recommendations", "arguments": {"limit": 3, "recommendation_filter": "BUY"}}'
+    ) == {
+        "tool": "find_fragile_recommendations",
+        "arguments": {"limit": 3, "recommendation_filter": "BUY"},
+        "issue": "",
+    }
 
     with pytest.raises(AssistantValidationError):
         parse_scenario_tool_request('{"tool": "delete_everything", "arguments": {}}')
+
+
+def test_fragile_query_tool_request_routes_buy_queries() -> None:
+    request = fragile_query_tool_request("What are the most fragile buy opportunities?")
+
+    assert request == {
+        "tool": "find_fragile_recommendations",
+        "arguments": {
+            "limit": 5,
+            "recommendation_filter": "BUY",
+            "downside_case": None,
+        },
+        "issue": "",
+    }
+
+
+def test_fragile_query_tool_request_adds_downside_case() -> None:
+    request = fragile_query_tool_request(
+        "Find the most fragile BUY opportunities and stress test them."
+    )
+
+    assert request["tool"] == "find_fragile_recommendations"
+    assert request["arguments"]["recommendation_filter"] == "BUY"
+    assert request["arguments"]["downside_case"] == "moderate"
 
 
 def test_validation_router_retries_then_falls_back() -> None:

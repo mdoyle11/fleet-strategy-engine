@@ -30,6 +30,23 @@ METRIC_FIELD_BOUNDS = {
     "competitor_rate": (0.01, None),
     "market_share_pct": (0.0, 100.0),
 }
+DOWNSIDE_CASES = {
+    "mild": {
+        "utilization_pct_delta": -2.0,
+        "market_share_pct_delta": -1.0,
+        "avg_daily_fleet_cost_pct_delta": 0.05,
+    },
+    "moderate": {
+        "utilization_pct_delta": -4.0,
+        "market_share_pct_delta": -2.0,
+        "avg_daily_fleet_cost_pct_delta": 0.10,
+    },
+    "severe": {
+        "utilization_pct_delta": -7.0,
+        "market_share_pct_delta": -4.0,
+        "avg_daily_fleet_cost_pct_delta": 0.15,
+    },
+}
 
 
 class ScenarioToolError(ValueError):
@@ -149,6 +166,104 @@ def add_fragility_columns(df: pd.DataFrame, config: EngineConfig) -> pd.DataFram
         score_margin_to_action_threshold
     )
     return fragile
+
+
+def fragile_recommendations(
+    df: pd.DataFrame,
+    limit: int = 10,
+    recommendation_filter: Optional[str] = None,
+) -> pd.DataFrame:
+    recommended = run_recommendations(df, DEFAULT_CONFIG)
+    fragile = add_fragility_columns(recommended, DEFAULT_CONFIG)
+    if recommendation_filter:
+        action = recommendation_filter.upper()
+        if action not in {"BUY", "HOLD", "REDUCE"}:
+            raise ScenarioToolError("recommendation_filter must be BUY, HOLD, or REDUCE")
+        fragile = fragile[fragile["recommendation"] == action]
+
+    return fragile.sort_values(
+        [
+            "score_margin_to_action_change",
+            "nearest_threshold_distance",
+            "confidence",
+            "station",
+            "segment",
+        ]
+    ).head(max(1, int(limit)))
+
+
+def compact_fragile_row(row: pd.Series) -> dict[str, Any]:
+    return {
+        "station": row["station"],
+        "segment": row["segment"],
+        "recommendation": row["recommendation"],
+        "recommendation_score": round(float(row["recommendation_score"]), 2),
+        "confidence": row["confidence"],
+        "recommended_fleet_delta": int(row["recommended_fleet_delta"]),
+        "score_margin_to_action_change": round(
+            float(row["score_margin_to_action_change"]),
+            2,
+        ),
+        "nearest_rule_threshold": row["nearest_rule_threshold"],
+        "nearest_threshold_distance": round(float(row["nearest_threshold_distance"]), 2),
+        "utilization_pct": round(float(row["utilization_pct"]), 2),
+        "daily_roi": round(float(row["daily_roi"]), 4),
+        "market_share_pct": round(float(row["market_share_pct"]), 2),
+        "price_gap_pct": round(float(row["price_gap_pct"]), 2),
+        "reason_codes": row["reason_codes"],
+    }
+
+
+def downside_updates(row: pd.Series, downside_case: str) -> dict[str, float]:
+    case = DOWNSIDE_CASES.get(downside_case.lower())
+    if case is None:
+        raise ScenarioToolError(
+            "downside_case must be one of: " + ", ".join(sorted(DOWNSIDE_CASES))
+        )
+    return {
+        "utilization_pct": max(
+            0.0,
+            min(100.0, float(row["utilization_pct"]) + case["utilization_pct_delta"]),
+        ),
+        "market_share_pct": max(
+            0.0,
+            min(100.0, float(row["market_share_pct"]) + case["market_share_pct_delta"]),
+        ),
+        "avg_daily_fleet_cost": max(
+            0.0,
+            float(row["avg_daily_fleet_cost"])
+            * (1 + case["avg_daily_fleet_cost_pct_delta"]),
+        ),
+    }
+
+
+def find_fragile_recommendations(
+    df: pd.DataFrame,
+    limit: int = 10,
+    recommendation_filter: Optional[str] = None,
+    downside_case: Optional[str] = None,
+) -> dict[str, Any]:
+    fragile = fragile_recommendations(df, limit, recommendation_filter)
+    rows = [compact_fragile_row(row) for _, row in fragile.iterrows()]
+    result: dict[str, Any] = {
+        "tool": "find_fragile_recommendations",
+        "limit": int(limit),
+        "recommendation_filter": recommendation_filter.upper()
+        if recommendation_filter
+        else None,
+        "downside_case": downside_case,
+        "fragile_rows": rows,
+    }
+
+    if downside_case:
+        downside_results = []
+        for _, row in fragile.iterrows():
+            updates = downside_updates(row, downside_case)
+            downside_results.append(
+                metric_scenario(df, row["station"], row["segment"], updates)
+            )
+        result["downside_results"] = downside_results
+    return result
 
 
 def rule_scenario(df: pd.DataFrame, updates: dict[str, Any]) -> dict[str, Any]:
@@ -322,6 +437,13 @@ def metric_scenario(
 
 
 def run_scenario_tool(df: pd.DataFrame, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if tool_name == "find_fragile_recommendations":
+        return find_fragile_recommendations(
+            df,
+            int(arguments.get("limit", 10)),
+            arguments.get("recommendation_filter"),
+            arguments.get("downside_case"),
+        )
     if tool_name == "run_rule_scenario":
         return rule_scenario(df, arguments.get("updates", {}))
     if tool_name == "run_metric_scenario":

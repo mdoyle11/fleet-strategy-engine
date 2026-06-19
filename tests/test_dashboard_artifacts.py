@@ -4,13 +4,16 @@ import pandas as pd
 
 from fleet_strategy_engine.pipeline import (
     INPUT_ARTIFACT,
+    LATEST_RUN_ARTIFACT,
     RECOMMENDATIONS_ARTIFACT,
     SUMMARY_ARTIFACT,
+    load_latest_run_uri,
     load_pipeline_outputs,
     pipeline_outputs_exist,
     run_artifact_uri,
     run_recommendation_file_pipeline,
     write_input_csv,
+    write_latest_run_pointer,
     write_pipeline_outputs,
 )
 from fleet_strategy_engine.pipeline.io import S3ArtifactStore
@@ -51,6 +54,30 @@ def test_run_artifact_uri_supports_local_and_s3_roots(tmp_path: Path) -> None:
         run_artifact_uri("abc123", "s3://fleet-strategy/processed/runs")
         == "s3://fleet-strategy/processed/runs/abc123"
     )
+
+
+def test_latest_run_pointer_round_trip(tmp_path: Path) -> None:
+    processed_runs_uri = tmp_path / "processed" / "runs"
+
+    assert load_latest_run_uri(processed_runs_uri) is None
+
+    write_latest_run_pointer(processed_runs_uri, "run-123")
+
+    assert (tmp_path / "processed" / LATEST_RUN_ARTIFACT).exists()
+    assert load_latest_run_uri(processed_runs_uri) == str(
+        processed_runs_uri / "run-123"
+    )
+
+
+def test_invalid_latest_run_pointer_is_ignored(tmp_path: Path) -> None:
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    (processed_dir / LATEST_RUN_ARTIFACT).write_text(
+        '{"run_id": "nested/run"}',
+        encoding="utf-8",
+    )
+
+    assert load_latest_run_uri(processed_dir / "runs") is None
 
 
 def test_s3_artifact_store_parses_bucket_and_prefix() -> None:

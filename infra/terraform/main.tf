@@ -174,6 +174,15 @@ resource "aws_iam_role_policy" "pipeline_lambda_s3" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "pipeline_lambda" {
+  count = var.lambda_image_uri == "" ? 0 : 1
+
+  name              = "/aws/lambda/${local.name_prefix}-pipeline"
+  retention_in_days = 7
+
+  tags = local.common_tags
+}
+
 resource "aws_lambda_function" "pipeline" {
   count = var.lambda_image_uri == "" ? 0 : 1
 
@@ -193,6 +202,12 @@ resource "aws_lambda_function" "pipeline" {
   }
 
   tags = local.common_tags
+
+  depends_on = [
+    aws_cloudwatch_log_group.pipeline_lambda,
+    aws_iam_role_policy_attachment.pipeline_lambda_basic,
+    aws_iam_role_policy.pipeline_lambda_s3,
+  ]
 }
 
 resource "aws_lambda_permission" "allow_s3_pipeline_invoke" {

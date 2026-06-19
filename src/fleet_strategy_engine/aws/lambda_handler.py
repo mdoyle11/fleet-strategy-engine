@@ -1,7 +1,10 @@
 import os
 from urllib.parse import unquote_plus
 
-from fleet_strategy_engine.pipeline import run_recommendation_file_pipeline
+from fleet_strategy_engine.pipeline import (
+    run_recommendation_file_pipeline,
+    write_latest_run_pointer,
+)
 
 
 RAW_UPLOAD_PREFIX_ENV = "FLEET_RAW_UPLOAD_PREFIX"
@@ -26,6 +29,8 @@ def handler(event: dict, context: object) -> dict:
         input_uri = f"s3://{bucket}/{key}"
         output_uri = f"{processed_base_uri}/{run_id}"
         recommendations, summary = run_recommendation_file_pipeline(input_uri, output_uri)
+        if run_id != "sample":
+            write_latest_run_pointer(processed_base_uri, run_id)
 
         results.append(
             {

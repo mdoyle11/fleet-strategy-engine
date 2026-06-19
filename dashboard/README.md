@@ -8,6 +8,26 @@ uv run streamlit run dashboard/app.py
 
 The dashboard imports the reusable pipeline from `fleet_strategy_engine` and does not duplicate recommendation logic.
 
+In both local inline mode and AWS Lambda mode, a new browser session first
+checks:
+
+```text
+outputs/latest.json
+```
+
+In AWS, the equivalent location is:
+
+```text
+s3://your-bucket/processed/latest.json
+```
+
+The pointer identifies the most recently completed uploaded run. Local inline
+runs update it after processing, while Lambda updates it for AWS runs. If that
+run's Parquet and summary artifacts exist, the dashboard loads them
+immediately. If the pointer is missing, invalid, or stale, the dashboard
+processes the bundled sample data instead. Running the sample does not replace
+the latest uploaded run pointer.
+
 ## Artifact Storage
 
 On first load, the dashboard processes the sample data through the same artifact path used for uploads. When you reset to sample data or upload a CSV, the dashboard writes an input artifact, runs the pipeline, and reloads dashboard state from the processed outputs:

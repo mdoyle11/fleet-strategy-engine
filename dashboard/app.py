@@ -36,11 +36,13 @@ from dashboard.tabs.sensitivity import (
 from fleet_strategy_engine.pipeline import (
     INPUT_ARTIFACT,
     artifact_uri,
+    load_latest_run_uri,
     load_pipeline_outputs,
     pipeline_outputs_exist,
     run_artifact_uri,
     run_recommendation_file_pipeline,
     write_input_csv,
+    write_latest_run_pointer,
 )
 from fleet_strategy_engine.pipeline.validate import ValidationError
 
@@ -58,6 +60,28 @@ def load_sample_data() -> pd.DataFrame:
     return pd.read_csv(SAMPLE_DATA_PATH)
 
 
+def load_run(run_uri: str, input_df: Optional[pd.DataFrame] = None) -> None:
+    recommendations, summary = load_pipeline_outputs(run_uri)
+    run_id = str(run_uri).rstrip("/").rsplit("/", 1)[-1]
+
+    if input_df is not None:
+        st.session_state["input_df"] = input_df
+    else:
+        st.session_state.pop("input_df", None)
+    st.session_state["run_id"] = run_id
+    st.session_state["run_uri"] = str(run_uri)
+    st.session_state["recommendations"] = recommendations
+    st.session_state["summary"] = summary
+
+
+def load_latest_run() -> bool:
+    latest_run_uri = load_latest_run_uri(artifact_base_uri())
+    if latest_run_uri is None or not pipeline_outputs_exist(latest_run_uri):
+        return False
+    load_run(latest_run_uri)
+    return True
+
+
 def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
     run_id = run_id or uuid.uuid4().hex
     run_uri = run_artifact_uri(run_id, artifact_base_uri())
@@ -73,14 +97,10 @@ def run_pipeline(input_df: pd.DataFrame, run_id: Optional[str] = None) -> None:
             artifact_uri(run_uri, INPUT_ARTIFACT),
             run_uri,
         )
+        if run_id != "sample":
+            write_latest_run_pointer(artifact_base_uri(), run_id)
 
-    artifact_recommendations, artifact_summary = load_pipeline_outputs(run_uri)
-
-    st.session_state["input_df"] = input_df
-    st.session_state["run_id"] = run_id
-    st.session_state["run_uri"] = str(run_uri)
-    st.session_state["recommendations"] = artifact_recommendations
-    st.session_state["summary"] = artifact_summary
+    load_run(run_uri, input_df)
 
 
 def wait_for_pipeline_outputs(run_uri: str) -> None:
@@ -109,7 +129,8 @@ with st.sidebar:
 
 if "recommendations" not in st.session_state:
     try:
-        run_pipeline(load_sample_data(), run_id="sample")
+        if not load_latest_run():
+            run_pipeline(load_sample_data(), run_id="sample")
     except (ValidationError, FileNotFoundError) as exc:
         st.error(str(exc))
         st.stop()

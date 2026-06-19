@@ -47,7 +47,7 @@ s3://bucket/raw/uploads/{run_id}/input.csv
 
 ## Pipeline Lambda
 
-The pipeline Lambda runs as a container image because the pipeline depends on pandas and pyarrow. After the initial Terraform apply creates the ECR repository, build and push the image:
+The pipeline Lambda runs as a container image because the pipeline depends on pandas and pyarrow. Terraform also manages its CloudWatch log group with seven-day retention, so `terraform destroy` removes the function logs with the rest of the stack. After the initial Terraform apply creates the ECR repository, build and push the image:
 
 Install/start Docker Desktop first if `docker --version` is not available.
 

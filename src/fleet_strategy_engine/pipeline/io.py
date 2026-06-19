@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -12,6 +12,7 @@ LOCAL_RUNS_URI = "outputs/runs"
 INPUT_ARTIFACT = "input.csv"
 RECOMMENDATIONS_ARTIFACT = "recommendations.parquet"
 SUMMARY_ARTIFACT = "summary.json"
+LATEST_RUN_ARTIFACT = "latest.json"
 
 
 PathLike = Union[str, Path]
@@ -73,6 +74,36 @@ def load_pipeline_outputs(output_uri: PathLike) -> tuple[pd.DataFrame, dict]:
 def pipeline_outputs_exist(output_uri: PathLike) -> bool:
     store = artifact_store(output_uri)
     return store.exists(RECOMMENDATIONS_ARTIFACT) and store.exists(SUMMARY_ARTIFACT)
+
+
+def write_latest_run_pointer(processed_runs_uri: PathLike, run_id: str) -> None:
+    artifact_store(_parent_uri(processed_runs_uri)).write_bytes(
+        LATEST_RUN_ARTIFACT,
+        json.dumps({"run_id": run_id}, indent=2).encode("utf-8"),
+    )
+
+
+def load_latest_run_uri(processed_runs_uri: PathLike) -> Optional[str]:
+    store = artifact_store(_parent_uri(processed_runs_uri))
+    if not store.exists(LATEST_RUN_ARTIFACT):
+        return None
+
+    try:
+        payload = json.loads(store.read_bytes(LATEST_RUN_ARTIFACT).decode("utf-8"))
+        run_id = payload["run_id"]
+    except (json.JSONDecodeError, KeyError, TypeError, UnicodeDecodeError):
+        return None
+
+    if not isinstance(run_id, str) or not run_id or "/" in run_id:
+        return None
+    return run_artifact_uri(run_id, processed_runs_uri)
+
+
+def _parent_uri(uri: PathLike) -> str:
+    value = str(uri).rstrip("/")
+    if value.startswith("s3://"):
+        return value.rsplit("/", 1)[0]
+    return str(Path(value).parent)
 
 
 def artifact_store(root_uri: PathLike) -> "ArtifactStore":

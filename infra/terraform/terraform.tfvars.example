@@ -19,6 +19,7 @@ noncurrent_version_expiration_days = 7
 # SecureString in SSM Parameter Store before deploying.
 google_api_key_parameter_name = ""
 # google_api_key_parameter_name = "/fleet-strategy-engine/dev/google-api-key"
+gemini_model = "gemini-3.1-flash-lite"
 
 # Image URIs are intentionally omitted. scripts/deploy_aws.sh builds the
 # images, resolves their immutable ECR digests, and passes them to Terraform.

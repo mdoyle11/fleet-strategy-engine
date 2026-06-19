@@ -96,7 +96,7 @@ GOOGLE_API_KEY="..."
 Optionally override the default model:
 
 ```bash
-export GEMINI_MODEL="gemini-3.5-flash"
+export GEMINI_MODEL="gemini-3.1-flash-lite"
 ```
 
 The `.env` file is ignored by git.

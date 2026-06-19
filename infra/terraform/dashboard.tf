@@ -248,6 +248,11 @@ resource "aws_ecs_express_gateway_service" "dashboard" {
       value = "90"
     }
 
+    environment {
+      name  = "GEMINI_MODEL"
+      value = var.gemini_model
+    }
+
     dynamic "secret" {
       for_each = var.google_api_key_parameter_name == "" ? [] : [local.google_api_key_parameter_arn]
 

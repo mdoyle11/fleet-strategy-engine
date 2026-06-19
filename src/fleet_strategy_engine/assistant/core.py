@@ -16,7 +16,7 @@ from fleet_strategy_engine.recommendation_context import context_rows, portfolio
 
 
 REASON_CODE_REFERENCE_PATH = Path("docs/reason_code_reference.json")
-DEFAULT_MODEL = "gemini-3.5-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 MAX_REPAIR_ATTEMPTS = 2
 
 

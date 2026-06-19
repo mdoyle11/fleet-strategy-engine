@@ -63,6 +63,12 @@ variable "google_api_key_parameter_name" {
   }
 }
 
+variable "gemini_model" {
+  description = "Gemini model identifier used by the dashboard assistant."
+  type        = string
+  default     = "gemini-3.1-flash-lite"
+}
+
 variable "ecr_max_images" {
   description = "Maximum number of container images to retain in each ECR repository."
   type        = number
